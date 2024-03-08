@@ -1,0 +1,8 @@
+[package]
+name = "status_bar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smithay-client-toolkit = { version = "0.18.1", default_features = false }
+wayland-client = "0.31.2"
