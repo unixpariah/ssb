@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -60,32 +62,35 @@ impl StatusBar {
     }
 
     fn draw(&mut self) {
-        self.output_state()
+        let _ = self
+            .output_state()
             .outputs()
-            .zip(self.layers.clone())
-            .for_each(|(output, layer)| {
+            .enumerate()
+            .try_for_each(|(index, output)| {
                 let height = 50;
                 let (width, _) = self
                     .output_state()
                     .info(&output)
-                    .unwrap()
+                    .ok_or("Failed to get output info")?
                     .logical_size
-                    .unwrap();
-                let mut pool =
-                    SlotPool::new(width as usize * height as usize * 4, &self.shm).unwrap();
-                let (buffer, canvas) = pool
-                    .create_buffer(width, height, width * 4, wl_shm::Format::Argb8888)
-                    .unwrap();
+                    .ok_or("Failed to get logical size of output")?;
+                let mut pool = SlotPool::new(width as usize * height as usize * 4, &self.shm)?;
+                let (buffer, canvas) =
+                    pool.create_buffer(width, height, width * 4, wl_shm::Format::Argb8888)?;
 
                 canvas.chunks_exact_mut(4).for_each(|pixel| {
                     pixel.copy_from_slice(&[0, 0, 0, 255]);
                 });
 
-                layer.set_size(width as u32, height as u32);
-                layer.set_exclusive_zone(height);
-                layer.wl_surface().damage_buffer(0, 0, width, height);
-                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-                layer.commit();
+                if let Some(layer) = self.layers.get(index) {
+                    layer.set_size(width as u32, height as u32);
+                    layer.set_exclusive_zone(height);
+                    layer.wl_surface().damage_buffer(0, 0, width, height);
+                    layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+                    layer.commit();
+                };
+
+                Ok::<(), Box<dyn Error>>(())
             });
     }
 }
