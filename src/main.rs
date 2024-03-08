@@ -20,49 +20,73 @@ struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
-    layer: LayerSurface,
+    layers: Vec<LayerSurface>,
 }
 
 impl StatusBar {
     fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>) -> Self {
         let compositor = CompositorState::bind(globals, qh).unwrap();
         let layer_shell = LayerShell::bind(globals, qh).unwrap();
-        let surface = compositor.create_surface(qh);
         let shm = Shm::bind(globals, qh).unwrap();
+        let output_state = OutputState::new(globals, qh);
 
-        let layer =
-            layer_shell.create_layer_surface(qh, surface, Layer::Top, Some("status-bar"), None);
+        let layers = output_state
+            .outputs()
+            .map(|output| {
+                let surface = compositor.create_surface(qh);
+                let layer = layer_shell.create_layer_surface(
+                    qh,
+                    surface,
+                    Layer::Top,
+                    Some("status-bar"),
+                    Some(&output),
+                );
 
-        layer.set_size(200, 200);
-        layer.set_anchor(Anchor::TOP);
-        layer.set_exclusive_zone(1);
+                layer.set_size(1, 1);
+                layer.set_anchor(Anchor::TOP);
 
-        layer.commit();
+                layer.commit();
+
+                layer
+            })
+            .collect();
 
         Self {
-            output_state: OutputState::new(globals, qh),
+            output_state,
             registry_state: RegistryState::new(globals),
             shm,
-            layer,
+            layers,
         }
     }
 
     fn draw(&mut self) {
-        let mut pool = SlotPool::new(200 * 200 * 4, &self.shm).unwrap();
-        let (buffer, canvas) = pool
-            .create_buffer(200, 200, 200 * 4, wl_shm::Format::Argb8888)
-            .unwrap();
+        self.output_state()
+            .outputs()
+            .zip(self.layers.clone())
+            .for_each(|(output, layer)| {
+                let height = 50;
+                let (width, _) = self
+                    .output_state()
+                    .info(&output)
+                    .unwrap()
+                    .logical_size
+                    .unwrap();
+                let mut pool =
+                    SlotPool::new(width as usize * height as usize * 4, &self.shm).unwrap();
+                let (buffer, canvas) = pool
+                    .create_buffer(width, height, width * 4, wl_shm::Format::Argb8888)
+                    .unwrap();
 
-        canvas.chunks_exact_mut(4).for_each(|pixel| {
-            pixel.copy_from_slice(&[0, 0, 0, 255]);
-        });
+                canvas.chunks_exact_mut(4).for_each(|pixel| {
+                    pixel.copy_from_slice(&[0, 0, 0, 255]);
+                });
 
-        self.layer.set_size(200, 200);
-        self.layer.wl_surface().damage_buffer(0, 0, 200, 200);
-        self.layer
-            .wl_surface()
-            .attach(Some(buffer.wl_buffer()), 0, 0);
-        self.layer.commit();
+                layer.set_size(width as u32, height as u32);
+                layer.set_exclusive_zone(height);
+                layer.wl_surface().damage_buffer(0, 0, width, height);
+                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+                layer.commit();
+            });
     }
 }
 
