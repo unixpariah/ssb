@@ -2,7 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{Data, BACKGROUND, DATA, FONT, HEIGHT, INTERVAL, PLACEMENT};
+use config::{Data, BACKGROUND, DATA, FONT, HEIGHT, INTERVAL, PLACEMENT, UNKOWN};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -52,7 +52,7 @@ impl StatusBar {
                 let layer = layer_shell.create_layer_surface(
                     qh,
                     surface,
-                    Layer::Top,
+                    Layer::Bottom,
                     Some("status-bar"),
                     Some(&output),
                 );
@@ -226,9 +226,18 @@ fn create() {
         context.move_to(d.1, d.2);
         let format = d.3;
         let output = match d.0 {
-            Data::Custom((command, args)) => new_command(command, args),
+            Data::Custom(command, args) => new_command(command, args),
             Data::Ram => util::get_ram().to_string().split('.').collect::<Vec<_>>()[0].into(),
-            Data::Wifi => util::get_wifi().into(),
+            Data::Backlight => util::get_backlight()
+                .to_string()
+                .split('.')
+                .collect::<Vec<_>>()[0]
+                .into(),
+            Data::Cpu => util::get_cpu().to_string().split('.').collect::<Vec<_>>()[0].into(),
+            Data::Workspaces => util::get_current_workspace()
+                .unwrap_or("N/A".to_string())
+                .to_string()
+                .into(),
         };
         let format = format.replace("$", String::from_utf8(output).unwrap().trim());
         context.show_text(&format).unwrap();

@@ -1,7 +1,7 @@
 use crate::Font;
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
 
-pub const INTERVAL: u64 = 1000; // In milliseconds
+pub const INTERVAL: u64 = 100; // In milliseconds
 
 pub const UNKOWN: &[u8] = b"N/A";
 
@@ -24,20 +24,24 @@ pub static FONT: Font = Font {
 
 pub static DATA: &[(Data, f64, f64, &str)] = &[
     // Command                         x      y     format
-    (Data::Custom(("date", "+%H:%M")), 925.0, 20.0, " $"),
-    (Data::Ram, 1635.0, 20.0, "󰍛 $%"),
-    (Data::Wifi, 1775.0, 20.0, "  $"),
+    (Data::Custom("date", "+%H:%M"), 925.0, 25.0, " $"),
+    (Data::Ram, 1635.0, 25.0, "󰍛 $%"),
+    (Data::Custom("iwgetid", "-r"), 1775.0, 25.0, "  $"),
+    (Data::Backlight, 1475.0, 25.0, " $%"),
     (
-        Data::Custom(("pamixer", "--get-volume")),
+        Data::Custom("pamixer", "--get-volume"),
         1540.0,
-        20.0,
+        25.0,
         " $%",
     ),
-    //(Data::Cpu, 1700.0, 20.0, " $"),
+    (Data::Cpu, 1700.0, 25.0, " $%"),
+    (Data::Workspaces, 35.0, 25.0, "$"),
 ];
 
 pub enum Data {
-    Custom((&'static str, &'static str)),
+    Custom(&'static str, &'static str),
     Ram,
-    Wifi,
+    Backlight,
+    Cpu,
+    Workspaces,
 }
