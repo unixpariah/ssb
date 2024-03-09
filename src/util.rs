@@ -1,7 +1,11 @@
+use fast_image_resize::{FilterType, PixelType, Resizer};
+use image::RgbaImage;
+
 use crate::config::UNKOWN;
 use std::{
     error::Error,
     fs,
+    num::NonZeroU32,
     process::{Command, Output},
 };
 
@@ -77,4 +81,51 @@ pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
             }
         })
         .collect::<String>())
+}
+
+pub fn resize_image(image: &RgbaImage, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+    let (img_w, img_h) = image.dimensions();
+    let image = image.as_raw().to_vec();
+
+    if img_w == width && img_h == height {
+        return Ok(image);
+    }
+
+    let ratio = width as f32 / height as f32;
+    let img_r = img_w as f32 / img_h as f32;
+
+    let (trg_w, trg_h) = if ratio > img_r {
+        let scale = height as f32 / img_h as f32;
+        ((img_w as f32 * scale) as u32, height)
+    } else {
+        let scale = width as f32 / img_w as f32;
+        (width, (img_h as f32 * scale) as u32)
+    };
+
+    let trg_w = trg_w.min(width);
+    let trg_h = trg_h.min(height);
+
+    // If img_w, img_h, trg_w or trg_h is 0 you have bigger problems than unsafety
+    let src = fast_image_resize::Image::from_vec_u8(
+        unsafe { NonZeroU32::new_unchecked(img_w) },
+        unsafe { NonZeroU32::new_unchecked(img_h) },
+        image,
+        PixelType::U8x4,
+    )?;
+
+    let new_w = unsafe { NonZeroU32::new_unchecked(trg_w) };
+    let new_h = unsafe { NonZeroU32::new_unchecked(trg_h) };
+
+    let mut dst = fast_image_resize::Image::new(new_w, new_h, PixelType::U8x3);
+    let mut dst_view = dst.view_mut();
+
+    let mut resizer = Resizer::new(fast_image_resize::ResizeAlg::Convolution(
+        FilterType::Lanczos3,
+    ));
+
+    resizer.resize(&src.view(), &mut dst_view)?;
+
+    let dst = dst.into_vec();
+
+    Ok(dst)
 }

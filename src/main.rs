@@ -3,6 +3,7 @@ mod util;
 
 use cairo::{Context, Format, ImageSurface};
 use config::{BACKGROUND, DATA, FONT, HEIGHT, PLACEMENT};
+use image::RgbaImage;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -16,7 +17,7 @@ use smithay_client_toolkit::{
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
 use std::{collections::HashMap, error::Error};
-use util::new_command;
+use util::{new_command, resize_image};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
     protocol::{
@@ -113,14 +114,10 @@ impl StatusBar {
                 .write_to_png(&mut img)
                 .expect("Can't write to png");
 
-            let img = image::load_from_memory(&img).expect("Can't load image");
-            let img = img.resize(
-                width as u32,
-                HEIGHT as u32,
-                image::imageops::FilterType::Lanczos3,
-            );
+            let img = RgbaImage::from(image::load_from_memory(&img).expect("Can't load image"));
+            let img = resize_image(&img, width as u32, HEIGHT as u32).unwrap();
 
-            canvas.copy_from_slice(&img.to_rgba8().into_raw());
+            canvas.copy_from_slice(&img);
 
             if let Some(layer) = self.layers.get(&output) {
                 layer.set_size(width as u32, HEIGHT as u32);
