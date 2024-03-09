@@ -1,4 +1,8 @@
+mod config;
+mod util;
+
 use cairo::{Context, Format, ImageSurface};
+use config::{Data, BACKGROUND, DATA, FONT, HEIGHT, INTERVAL, PLACEMENT};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -6,32 +10,25 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
-        wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler, LayerSurface},
+        wlr_layer::{Layer, LayerShell, LayerShellHandler, LayerSurface},
         WaylandSurface,
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, io::Read};
+use std::{error::Error, thread, time::Duration};
+use util::new_command;
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
     protocol::{wl_output, wl_shm},
     Connection, QueueHandle,
 };
 
-struct Font {
+pub struct Font {
     font_family: &'static str,
     font_size: f64,
     bolded: bool,
+    color: [u8; 3],
 }
-
-//                            B   G   R   A
-static BACKGROUND: [u8; 4] = [33, 15, 20, 255];
-static HEIGHT: i32 = 40;
-static FONT: Font = Font {
-    font_family: "JetBrains Mono",
-    font_size: 40.0,
-    bolded: true,
-};
 
 struct StatusBar {
     registry_state: RegistryState,
@@ -61,7 +58,7 @@ impl StatusBar {
                 );
 
                 layer.set_size(1, 1);
-                layer.set_anchor(Anchor::TOP);
+                layer.set_anchor(PLACEMENT);
                 layer.commit();
 
                 layer
@@ -92,7 +89,9 @@ impl StatusBar {
                 let (buffer, canvas) =
                     pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-                let img = image::open("output.png").unwrap();
+                create();
+
+                let img = image::open("/tmp/output.png").unwrap();
                 let img = img.resize_exact(
                     width as u32,
                     HEIGHT as u32,
@@ -198,17 +197,21 @@ impl ShmHandler for StatusBar {
     }
 }
 
-fn main() {
+fn create() {
     let surface = ImageSurface::create(Format::ARgb32, 1920, HEIGHT).expect("Can't create surface");
     let context = Context::new(&surface).unwrap();
     context.set_source_rgba(
-        BACKGROUND[0] as f64 / 255.0,
-        BACKGROUND[1] as f64 / 255.0,
         BACKGROUND[2] as f64 / 255.0,
+        BACKGROUND[1] as f64 / 255.0,
+        BACKGROUND[0] as f64 / 255.0,
         BACKGROUND[3] as f64 / 255.0,
     );
-    context.paint();
-    context.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+    let _ = context.paint();
+    context.set_source_rgb(
+        FONT.color[2] as f64 / 255.0,
+        FONT.color[1] as f64 / 255.0,
+        FONT.color[0] as f64 / 255.0,
+    );
     context.select_font_face(
         FONT.font_family,
         cairo::FontSlant::Normal,
@@ -219,19 +222,38 @@ fn main() {
         },
     );
     context.set_font_size(FONT.font_size);
-    context.move_to(HEIGHT as f64 / 2.0, HEIGHT as f64 - 5.0);
-    context.show_text("Hello, World!").unwrap();
+    DATA.iter().for_each(|d| {
+        context.move_to(d.1, d.2);
+        let format = d.3;
+        let output = match d.0 {
+            Data::Custom((command, args)) => new_command(command, args),
+            Data::Ram => util::get_ram().to_string().split('.').collect::<Vec<_>>()[0].into(),
+            Data::Wifi => util::get_wifi().into(),
+        };
+        let format = format.replace("$", String::from_utf8(output).unwrap().trim());
+        context.show_text(&format).unwrap();
+    });
 
-    let mut file = std::fs::File::create("output.png").expect("Can't create file");
+    let mut file = std::fs::File::create("/tmp/output.png").expect("Can't create file");
     surface.write_to_png(&mut file).expect("Can't write to png");
+}
 
+fn main() {
+    let mut first = true;
     let conn = Connection::connect_to_env().unwrap();
     let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
     let qh = event_queue.handle();
     let mut bar = StatusBar::new(&globals, &qh);
+
     loop {
         let _ = event_queue.blocking_dispatch(&mut bar);
         bar.draw();
+
+        if first {
+            first = false;
+            continue;
+        }
+        thread::sleep(Duration::from_millis(INTERVAL))
     }
 }
 
