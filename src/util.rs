@@ -55,7 +55,7 @@ pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
     let workspaces = String::from_utf8(workspaces)?;
 
     let active_workspace = Command::new("hyprctl")
-        .args(&["activeworkspace", "-j"])
+        .args(["activeworkspace", "-j"])
         .output()?
         .stdout;
     let active_workspace = String::from_utf8(active_workspace)?;
@@ -70,7 +70,7 @@ pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
 
     Ok((0..length)
         .map(|i| {
-            if i == length - 1 && active_workspace >= length || i == active_workspace {
+            if i == active_workspace || i == length - 1 && active_workspace >= length {
                 "  "
             } else {
                 "  "

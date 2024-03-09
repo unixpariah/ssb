@@ -68,8 +68,9 @@ impl StatusBar {
                 Some(&output),
             );
 
-            layer.set_size(1, 1);
+            layer.set_size(1, HEIGHT as u32);
             layer.set_anchor(PLACEMENT);
+            layer.set_exclusive_zone(HEIGHT);
             layer.commit();
 
             layers.insert(output, layer);
@@ -82,7 +83,6 @@ impl StatusBar {
             layers,
         }
     }
-
     fn draw(&mut self) {
         let _ = self.output_state().outputs().try_for_each(|output| {
             let (width, _) = self
@@ -95,19 +95,35 @@ impl StatusBar {
             let (buffer, canvas) =
                 pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-            let _ = create();
+            let img_surface =
+                ImageSurface::create(Format::ARgb32, width, HEIGHT).expect("Can't create surface");
+            let context = Context::new(&img_surface)?;
+            set_context_properties(&context);
 
-            let img = image::open("/tmp/output.png")?;
-            let img = img.resize_exact(
+            DATA.iter().for_each(|d| {
+                context.move_to(d.1, d.2);
+                let format = d.3;
+                let output = get_output(&d.0);
+                let format = format.replace('$', &output);
+                let _ = context.show_text(&format);
+            });
+
+            let mut img = Vec::new();
+            img_surface
+                .write_to_png(&mut img)
+                .expect("Can't write to png");
+
+            let img = image::load_from_memory(&img).expect("Can't load image");
+            let img = img.resize(
                 width as u32,
                 HEIGHT as u32,
                 image::imageops::FilterType::Lanczos3,
             );
-            canvas.copy_from_slice(&img.to_rgba8());
+
+            canvas.copy_from_slice(&img.to_rgba8().into_raw());
 
             if let Some(layer) = self.layers.get(&output) {
                 layer.set_size(width as u32, HEIGHT as u32);
-                layer.set_exclusive_zone(HEIGHT);
                 layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
                 layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
                 layer.commit();
@@ -203,9 +219,7 @@ impl ShmHandler for StatusBar {
     }
 }
 
-fn create() -> Result<(), Box<dyn Error>> {
-    let surface = ImageSurface::create(Format::ARgb32, 1920, HEIGHT).expect("Can't create surface");
-    let context = Context::new(&surface)?;
+fn set_context_properties(context: &Context) {
     context.set_source_rgba(
         BACKGROUND[2] as f64 / 255.0,
         BACKGROUND[1] as f64 / 255.0,
@@ -228,38 +242,28 @@ fn create() -> Result<(), Box<dyn Error>> {
         },
     );
     context.set_font_size(FONT.font_size);
-    DATA.iter().for_each(|d| {
-        context.move_to(d.1, d.2);
-        let format = d.3;
-        let output = match d.0 {
-            Data::Custom(command, args) => new_command(command, args),
-            Data::Ram => util::get_ram().to_string().split('.').collect::<Vec<_>>()[0].into(),
-            Data::Backlight => util::get_backlight()
-                .to_string()
-                .split('.')
-                .collect::<Vec<_>>()[0]
-                .into(),
-            Data::Cpu => util::get_cpu().to_string().split('.').collect::<Vec<_>>()[0].into(),
-            Data::Workspaces => util::get_current_workspace()
-                .unwrap_or("N/A".to_string())
-                .to_string()
-                .into(),
-        };
-        let format = format.replace(
-            "$",
-            String::from_utf8(output).unwrap_or("".to_string()).trim(),
-        );
-        let _ = context.show_text(&format);
-    });
+}
 
-    let mut file = std::fs::File::create("/tmp/output.png").expect("Can't create file");
-    surface.write_to_png(&mut file).expect("Can't write to png");
-
-    Ok(())
+fn get_output(d: &Data) -> String {
+    match d {
+        Data::Custom(command, args) => String::from_utf8(new_command(command, args))
+            .unwrap()
+            .trim()
+            .to_string(),
+        Data::Ram => util::get_ram().to_string().split('.').collect::<Vec<_>>()[0].into(),
+        Data::Backlight => util::get_backlight()
+            .to_string()
+            .split('.')
+            .collect::<Vec<_>>()[0]
+            .into(),
+        Data::Cpu => util::get_cpu().to_string().split('.').collect::<Vec<_>>()[0].into(),
+        Data::Workspaces => util::get_current_workspace()
+            .unwrap_or("N/A".to_string())
+            .to_string(),
+    }
 }
 
 fn main() {
-    let mut first = true;
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -268,11 +272,6 @@ fn main() {
     loop {
         let _ = event_queue.blocking_dispatch(&mut bar);
         bar.draw();
-
-        if first {
-            first = false;
-            continue;
-        }
     }
 }
 

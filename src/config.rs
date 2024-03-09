@@ -1,6 +1,7 @@
 use crate::{Data, Font};
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
 
+// Value to display when data is not available
 pub const UNKOWN: &[u8] = b"N/A";
 
 // Background color               R   G   B   A
@@ -20,18 +21,14 @@ pub static FONT: Font = Font {
     color: [255, 255, 255],
 };
 
-pub static DATA: &[(Data, f64, f64, &str)] = &[
-    // Command                       x      y     format
-    (Data::Custom("date", "+%H:%M"), 925.0, 25.0, " $"),
-    (Data::Custom("iwgetid", "-r"), 1775.0, 25.0, "  $"),
-    (Data::Ram, 1635.0, 25.0, "󰍛 $%"),
-    (Data::Backlight, 1475.0, 25.0, " $%"),
-    (Data::Cpu, 1700.0, 25.0, " $%"),
-    (Data::Workspaces, 35.0, 25.0, "$"),
-    (
-        Data::Custom("pamixer", "--get-volume"),
-        1540.0,
-        25.0,
-        " $%",
-    ),
+#[rustfmt::skip]
+pub static DATA: &[(Data, f64, f64, &str, usize)] = &[
+    // Command                                x       y     format  interval(ms)
+    (Data::Custom("pamixer", "--get-volume"), 1540.0, 25.0, " $%", 1000  ),
+    (Data::Custom("date", "+%H:%M"),          925.0,  25.0, " $",  60000 ),
+    (Data::Custom("iwgetid", "-r"),           1775.0, 25.0, "  $", 1000  ),
+    (Data::Workspaces,                        35.0,   25.0, "$",    0     ),
+    (Data::Backlight,                         1475.0, 25.0, " $%", 1000  ),
+    (Data::Ram,                               1635.0, 25.0, "󰍛 $%", 1000  ),
+    (Data::Cpu,                               1700.0, 25.0, " $%", 1000  ),
 ];
