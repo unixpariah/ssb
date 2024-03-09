@@ -61,7 +61,7 @@ pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
     let active_workspace = String::from_utf8(active_workspace)?;
 
     let active_workspace = serde_json::from_str::<serde_json::Value>(&active_workspace)?;
-    let active_workspace = active_workspace.get("id").ok_or("")?.as_i64().ok_or("")? - 1;
+    let active_workspace = active_workspace.get("id").ok_or("")?.as_i64().ok_or("")? as usize - 1;
 
     let length = serde_json::from_str::<serde_json::Value>(&workspaces)?
         .as_array()
@@ -70,7 +70,7 @@ pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
 
     Ok((0..length)
         .map(|i| {
-            if i as i64 == active_workspace {
+            if i == length - 1 && active_workspace >= length || i == active_workspace {
                 "  "
             } else {
                 "  "

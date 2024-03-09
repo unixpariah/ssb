@@ -2,7 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{Data, BACKGROUND, DATA, FONT, HEIGHT, INTERVAL, PLACEMENT};
+use config::{BACKGROUND, DATA, FONT, HEIGHT, PLACEMENT};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -15,13 +15,24 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, thread, time::Duration};
+use std::{collections::HashMap, error::Error};
 use util::new_command;
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::{wl_output, wl_shm},
+    protocol::{
+        wl_output::{self, WlOutput},
+        wl_shm,
+    },
     Connection, QueueHandle,
 };
+
+pub enum Data {
+    Custom(&'static str, &'static str),
+    Ram,
+    Backlight,
+    Cpu,
+    Workspaces,
+}
 
 pub struct Font {
     font_family: &'static str,
@@ -34,7 +45,7 @@ struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
-    layers: Vec<LayerSurface>,
+    layers: HashMap<WlOutput, LayerSurface>,
 }
 
 impl StatusBar {
@@ -45,25 +56,24 @@ impl StatusBar {
         );
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
         let output_state = OutputState::new(globals, qh);
-        let layers = output_state
-            .outputs()
-            .map(|output| {
-                let surface = compositor.create_surface(qh);
-                let layer = layer_shell.create_layer_surface(
-                    qh,
-                    surface,
-                    Layer::Bottom,
-                    Some("status-bar"),
-                    Some(&output),
-                );
 
-                layer.set_size(1, 1);
-                layer.set_anchor(PLACEMENT);
-                layer.commit();
+        let mut layers = HashMap::new();
+        output_state.outputs().for_each(|output| {
+            let surface = compositor.create_surface(qh);
+            let layer = layer_shell.create_layer_surface(
+                qh,
+                surface,
+                Layer::Bottom,
+                Some("status-bar"),
+                Some(&output),
+            );
 
-                layer
-            })
-            .collect();
+            layer.set_size(1, 1);
+            layer.set_anchor(PLACEMENT);
+            layer.commit();
+
+            layers.insert(output, layer);
+        });
 
         Self {
             output_state,
@@ -74,41 +84,37 @@ impl StatusBar {
     }
 
     fn draw(&mut self) {
-        let _ = self
-            .output_state()
-            .outputs()
-            .enumerate()
-            .try_for_each(|(index, output)| {
-                let (width, _) = self
-                    .output_state()
-                    .info(&output)
-                    .ok_or("Failed to get output info")?
-                    .logical_size
-                    .ok_or("Failed to get logical size of output")?;
-                let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 4, &self.shm)?;
-                let (buffer, canvas) =
-                    pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
+        let _ = self.output_state().outputs().try_for_each(|output| {
+            let (width, _) = self
+                .output_state()
+                .info(&output)
+                .ok_or("Failed to get output info")?
+                .logical_size
+                .ok_or("Failed to get logical size of output")?;
+            let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 4, &self.shm)?;
+            let (buffer, canvas) =
+                pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-                create();
+            let _ = create();
 
-                let img = image::open("/tmp/output.png").unwrap();
-                let img = img.resize_exact(
-                    width as u32,
-                    HEIGHT as u32,
-                    image::imageops::FilterType::Lanczos3,
-                );
-                canvas.copy_from_slice(&img.to_rgba8());
+            let img = image::open("/tmp/output.png")?;
+            let img = img.resize_exact(
+                width as u32,
+                HEIGHT as u32,
+                image::imageops::FilterType::Lanczos3,
+            );
+            canvas.copy_from_slice(&img.to_rgba8());
 
-                if let Some(layer) = self.layers.get(index) {
-                    layer.set_size(width as u32, HEIGHT as u32);
-                    layer.set_exclusive_zone(HEIGHT);
-                    layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
-                    layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-                    layer.commit();
-                };
+            if let Some(layer) = self.layers.get(&output) {
+                layer.set_size(width as u32, HEIGHT as u32);
+                layer.set_exclusive_zone(HEIGHT);
+                layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
+                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+                layer.commit();
+            };
 
-                Ok::<(), Box<dyn Error>>(())
-            });
+            Ok::<(), Box<dyn Error>>(())
+        });
     }
 }
 
@@ -197,9 +203,9 @@ impl ShmHandler for StatusBar {
     }
 }
 
-fn create() {
+fn create() -> Result<(), Box<dyn Error>> {
     let surface = ImageSurface::create(Format::ARgb32, 1920, HEIGHT).expect("Can't create surface");
-    let context = Context::new(&surface).unwrap();
+    let context = Context::new(&surface)?;
     context.set_source_rgba(
         BACKGROUND[2] as f64 / 255.0,
         BACKGROUND[1] as f64 / 255.0,
@@ -239,18 +245,23 @@ fn create() {
                 .to_string()
                 .into(),
         };
-        let format = format.replace("$", String::from_utf8(output).unwrap().trim());
-        context.show_text(&format).unwrap();
+        let format = format.replace(
+            "$",
+            String::from_utf8(output).unwrap_or("".to_string()).trim(),
+        );
+        let _ = context.show_text(&format);
     });
 
     let mut file = std::fs::File::create("/tmp/output.png").expect("Can't create file");
     surface.write_to_png(&mut file).expect("Can't write to png");
+
+    Ok(())
 }
 
 fn main() {
     let mut first = true;
-    let conn = Connection::connect_to_env().unwrap();
-    let (globals, mut event_queue) = registry_queue_init(&conn).unwrap();
+    let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
+    let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
     let mut bar = StatusBar::new(&globals, &qh);
 
@@ -262,7 +273,6 @@ fn main() {
             first = false;
             continue;
         }
-        thread::sleep(Duration::from_millis(INTERVAL))
     }
 }
 

@@ -723,7 +723,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "status_bar"
+name = "ssb"
 version = "0.1.0"
 dependencies = [
  "cairo-rs",
