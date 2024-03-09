@@ -23,7 +23,7 @@ pub static FONT: Font = Font {
 };
 
 pub static DATA: &[(Data, f64, f64, &str)] = &[
-    // Command                         x      y     format
+    // Command                       x      y     format
     (Data::Custom("date", "+%H:%M"), 925.0, 25.0, " $"),
     (Data::Ram, 1635.0, 25.0, "󰍛 $%"),
     (Data::Custom("iwgetid", "-r"), 1775.0, 25.0, "  $"),

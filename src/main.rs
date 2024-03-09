@@ -2,7 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{Data, BACKGROUND, DATA, FONT, HEIGHT, INTERVAL, PLACEMENT, UNKOWN};
+use config::{Data, BACKGROUND, DATA, FONT, HEIGHT, INTERVAL, PLACEMENT};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
