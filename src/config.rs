@@ -21,6 +21,28 @@ pub static FONT: Font = Font {
     color: [255, 255, 255],
 };
 
+/*
+ *  Function          Description                                                Argument                                                                 Example
+ *
+ *  Cmd::Custom       This function allows you to run any custom command         It takes two arguments: the command to run and its arguments             ("pamixer", "--get-volume")
+ *                    that you specify.                                          These are typically passed as strings.
+ *
+ *  Cmd::Workspaces   This function is used to display the status of all         It takes two arguments: icons for active and inactive windows            (" ", " ")
+ *                    workspaces.                                                These are typically passed as strings.
+ *
+ *  Cmd::Backlight    This function provides information about the backlight     It takes one argument: an enum representing the type of data to display  (BacklightOpts::Perc)
+ *                    of your display.                                           This could be the percentage of brightness, the actual brightness value,
+ *                                                                               or any other relevant information.
+ *
+ *  Cmd::Ram          This function gives information about the system's RAM.    It takes one argument: an enum representing the type of data to display   (RamOpts::PercUsed)
+ *                                                                               This could be the percentage of RAM used, the actual amount of RAM used,
+ *                                                                               or any other relevant information.
+ *
+ *  Cmd::Cpu          This function provides information about the CPU.          It takes one argument: an enum representing the type of data to display   (CpuOpts::Perc)
+ *                                                                               This could be the percentage of CPU used, the actual CPU speed,
+ *                                                                               or any other relevant information.
+ */
+
 #[rustfmt::skip]
 pub static DATA: [(Cmd, f64, f64, &str, usize); 7] = [
     // Command                                x        y      format    interval(ms)
