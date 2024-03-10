@@ -1,4 +1,4 @@
-use crate::RamOpts;
+use crate::{BacklightOpts, CpuOpts, RamOpts};
 use fast_image_resize::{FilterType, PixelType, Resizer};
 use image::RgbaImage;
 use std::{error::Error, fs, num::NonZeroU32, process::Command};
@@ -29,7 +29,7 @@ pub fn get_ram(opt: RamOpts) -> Result<String, Box<dyn Error>> {
     .to_string())
 }
 
-pub fn get_backlight() -> Result<String, Box<dyn Error>> {
+pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
     let brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/actual_brightness")?
         .trim()
         .parse::<f64>()?;
@@ -38,14 +38,20 @@ pub fn get_backlight() -> Result<String, Box<dyn Error>> {
         .trim()
         .parse::<f64>()?;
 
-    Ok(((brightness / max_brightness) * 100.0).to_string())
+    match opts {
+        BacklightOpts::Perc => Ok(((brightness / max_brightness) * 100.0).to_string()),
+        BacklightOpts::Value => Ok(brightness.to_string()),
+    }
 }
 
-pub fn get_cpu() -> Result<String, Box<dyn Error>> {
+pub fn get_cpu(opts: CpuOpts) -> Result<String, Box<dyn Error>> {
     let output = new_command("mpstat", "")?;
     let output = output.split_whitespace().collect::<Vec<&str>>();
     let idle = output.last().ok_or("not found")?.parse::<f64>()?;
-    Ok((100.0 - idle).to_string())
+
+    match opts {
+        CpuOpts::Perc => Ok((100.0 - idle).to_string()),
+    }
 }
 
 pub fn get_current_workspace(

@@ -304,8 +304,12 @@ fn get_command_output(d: &Cmd) -> Result<String, Box<dyn Error>> {
         Cmd::Custom(command, args) => new_command(command, args)?,
         Cmd::Workspaces(active, inactive) => util::get_current_workspace(active, inactive)?,
         Cmd::Ram(opt) => util::get_ram(*opt)?.split('.').next().ok_or("")?.into(),
-        Cmd::Backlight(opt) => util::get_backlight()?.split('.').next().ok_or("")?.into(),
-        Cmd::Cpu(opt) => util::get_cpu()?.split('.').next().ok_or("")?.into(),
+        Cmd::Backlight(opt) => util::get_backlight(*opt)?
+            .split('.')
+            .next()
+            .ok_or("")?
+            .into(),
+        Cmd::Cpu(opt) => util::get_cpu(*opt)?.split('.').next().ok_or("")?.into(),
     })
 }
 

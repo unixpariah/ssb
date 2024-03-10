@@ -22,7 +22,7 @@ pub static FONT: Font = Font {
 };
 
 #[rustfmt::skip]
-pub static DATA: &[(Cmd, f64, f64, &str, usize)] = &[
+pub static DATA: [(Cmd, f64, f64, &str, usize); 7] = [
     // Command                                x        y      format    interval(ms)
     (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  50     ),
     (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   60000  ),
