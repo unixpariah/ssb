@@ -23,12 +23,12 @@ pub static FONT: Font = Font {
 
 #[rustfmt::skip]
 pub static DATA: &[(Cmd, f64, f64, &str, usize)] = &[
-    // Command                                 x        y      format   interval(ms)
-    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  1000   ),
+    // Command                                x        y      format    interval(ms)
+    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  0      ),
     (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   60000  ),
-    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  1000   ),
+    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  5000   ),
     (Cmd::Workspaces,                         35.0,    25.0,  "s%",     0      ),
-    (Cmd::Backlight,                          1475.0,  25.0,  " s%%",  1000   ),
-    (Cmd::Ram,                                1635.0,  25.0,  "󰍛 s%%",  1000   ),
-    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  1000   ),
+    (Cmd::Backlight,                          1475.0,  25.0,  " s%%",  0      ),
+    (Cmd::Ram,                                1635.0,  25.0,  "󰍛 s%%",  5000   ),
+    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  5000   ),
 ];

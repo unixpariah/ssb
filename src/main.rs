@@ -16,7 +16,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::error::Error;
+use std::{error::Error, time::Instant};
 use util::{new_command, resize_image};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
@@ -24,6 +24,7 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
+#[derive(Copy, Clone)]
 pub enum Cmd {
     Custom(&'static str, &'static str),
     Ram,
@@ -39,11 +40,20 @@ pub struct Font {
     color: [u8; 3],
 }
 
-#[derive(Debug)]
 struct OutputInfo {
     output_id: u32,
     layer_surface: LayerSurface,
     output: wl_output::WlOutput,
+}
+
+struct Info {
+    output: String,
+    command: Cmd,
+    x: f64,
+    y: f64,
+    format: &'static str,
+    interval: usize,
+    timestamp: Instant,
 }
 
 struct StatusBar {
@@ -53,7 +63,7 @@ struct StatusBar {
     outputs: Vec<OutputInfo>,
     layer_shell: LayerShell,
     compositor_state: CompositorState,
-    first_configure: bool,
+    information: Vec<Info>,
 }
 
 impl StatusBar {
@@ -65,6 +75,19 @@ impl StatusBar {
         );
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
+        let information = DATA
+            .iter()
+            .map(|(command, x, y, format, interval)| Info {
+                output: get_output(command),
+                command: *command,
+                x: *x,
+                y: *y,
+                format: *format,
+                interval: *interval,
+                timestamp: Instant::now(),
+            })
+            .collect();
+
         Self {
             compositor_state,
             layer_shell,
@@ -72,11 +95,11 @@ impl StatusBar {
             registry_state: RegistryState::new(globals),
             shm,
             outputs: Vec::new(),
-            first_configure: true,
+            information,
         }
     }
+
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        println!("{:#?}", self.outputs);
         self.outputs.iter().try_for_each(|output| {
             let (width, _) = self
                 .output_state
@@ -89,19 +112,22 @@ impl StatusBar {
             let (buffer, canvas) =
                 pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-            let img_surface = ImageSurface::create(Format::ARgb32, width, HEIGHT)?;
-            let context = Context::new(&img_surface)?;
+            let surface = ImageSurface::create(Format::ARgb32, width, HEIGHT)?;
+            let context = Context::new(&surface)?;
             set_context_properties(&context);
 
-            DATA.iter().for_each(|options| {
-                context.move_to(options.1, options.2);
-                let output = get_output(&options.0);
-                let format = options.3.replace("s%", &output);
+            self.information.iter_mut().for_each(|info| {
+                if info.timestamp.elapsed().as_millis() >= info.interval as u128 {
+                    info.output = get_output(&info.command);
+                    info.timestamp = Instant::now();
+                }
+                let format = info.format.replace("s%", &info.output);
+                context.move_to(info.x, info.y);
                 let _ = context.show_text(&format);
             });
 
             let mut img = Vec::new();
-            img_surface.write_to_png(&mut img)?;
+            surface.write_to_png(&mut img)?;
 
             let img = RgbaImage::from(image::load_from_memory(&img)?);
             let img = resize_image(&img, width as u32, HEIGHT as u32)?;
@@ -139,7 +165,6 @@ impl OutputHandler for StatusBar {
         );
 
         let info = self.output_state.info(&output).unwrap();
-
         let (width, _) = info.logical_size.unwrap();
 
         layer.set_size(width as u32, HEIGHT as u32);
@@ -278,9 +303,7 @@ fn get_output(d: &Cmd) -> String {
             .split('.')
             .collect::<Vec<_>>()[0]
             .into(),
-        Cmd::Workspaces => util::get_current_workspace()
-            .unwrap_or("N/A".to_string())
-            .to_string(),
+        Cmd::Workspaces => util::get_current_workspace().unwrap_or("N/A".to_string()),
     }
 }
 
@@ -289,15 +312,14 @@ fn main() {
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
     let mut status_bar = StatusBar::new(&globals, &qh);
+    event_queue
+        .blocking_dispatch(&mut status_bar)
+        .expect("Failed to dispatch events");
     loop {
         event_queue
             .blocking_dispatch(&mut status_bar)
             .expect("Failed to dispatch events");
-        if status_bar.first_configure {
-            status_bar.first_configure = false;
-            continue;
-        }
-        let _ = status_bar.draw();
+        status_bar.draw().unwrap();
     }
 }
 
