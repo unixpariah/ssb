@@ -1,36 +1,35 @@
+use crate::RamOpts;
 use fast_image_resize::{FilterType, PixelType, Resizer};
 use image::RgbaImage;
+use std::{error::Error, fs, num::NonZeroU32, process::Command};
 
-use crate::config::UNKOWN;
-use std::{
-    error::Error,
-    fs,
-    num::NonZeroU32,
-    process::{Command, Output},
-};
-
-pub fn new_command(command: &str, args: &str) -> Vec<u8> {
-    Command::new(command)
-        .args(args.split_whitespace())
-        .output()
-        .unwrap_or(Output {
-            stdout: UNKOWN.into(),
-            stderr: UNKOWN.into(),
-            status: std::process::ExitStatus::default(),
-        })
-        .stdout
+pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> {
+    Ok(String::from_utf8(
+        Command::new(command)
+            .args(args.split_whitespace())
+            .output()?
+            .stdout,
+    )?
+    .trim()
+    .to_string())
 }
 
-pub fn get_ram() -> Result<f64, Box<dyn Error>> {
-    let output = new_command("free", "-m");
-    let output = String::from_utf8_lossy(&output);
+pub fn get_ram(opt: RamOpts) -> Result<String, Box<dyn Error>> {
+    let output = new_command("free", "-m")?;
     let output = output.split_whitespace().collect::<Vec<&str>>();
     let total = output[7].parse::<f64>()?;
     let used = output[8].parse::<f64>()?;
-    Ok((used / total) * 100.0)
+
+    Ok(match opt {
+        RamOpts::PercUsed => (used / total) * 100.0,
+        RamOpts::PercFree => ((total - used) / total) * 100.0,
+        RamOpts::Used => used,
+        RamOpts::Free => total - used,
+    }
+    .to_string())
 }
 
-pub fn get_backlight() -> Result<f64, Box<dyn Error>> {
+pub fn get_backlight() -> Result<String, Box<dyn Error>> {
     let brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/actual_brightness")?
         .trim()
         .parse::<f64>()?;
@@ -39,20 +38,21 @@ pub fn get_backlight() -> Result<f64, Box<dyn Error>> {
         .trim()
         .parse::<f64>()?;
 
-    Ok((brightness / max_brightness) * 100.0)
+    Ok(((brightness / max_brightness) * 100.0).to_string())
 }
 
-pub fn get_cpu() -> Result<f64, Box<dyn Error>> {
-    let output = new_command("mpstat", "");
-    let output = String::from_utf8_lossy(&output);
+pub fn get_cpu() -> Result<String, Box<dyn Error>> {
+    let output = new_command("mpstat", "")?;
     let output = output.split_whitespace().collect::<Vec<&str>>();
     let idle = output.last().ok_or("not found")?.parse::<f64>()?;
-    Ok(100.0 - idle)
+    Ok((100.0 - idle).to_string())
 }
 
-pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
-    let workspaces = new_command("hyprctl", "workspaces -j");
-    let workspaces = String::from_utf8(workspaces)?;
+pub fn get_current_workspace(
+    active: &'static str,
+    inactive: &'static str,
+) -> Result<String, Box<dyn Error>> {
+    let workspaces = new_command("hyprctl", "workspaces -j")?;
 
     let active_workspace = Command::new("hyprctl")
         .args(["activeworkspace", "-j"])
@@ -71,9 +71,9 @@ pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {
     Ok((0..length)
         .map(|i| {
             if i == active_workspace || i == length - 1 && active_workspace >= length {
-                "  "
+                format!("{} ", active)
             } else {
-                "  "
+                format!("{} ", inactive)
             }
         })
         .collect::<String>())
@@ -122,6 +122,5 @@ pub fn resize_image(image: &RgbaImage, width: u32, height: u32) -> Result<Vec<u8
     resizer.resize(&src.view(), &mut dst_view)?;
 
     let dst = dst.into_vec();
-
     Ok(dst)
 }

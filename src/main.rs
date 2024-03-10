@@ -2,7 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{BACKGROUND, DATA, FONT, HEIGHT, PLACEMENT};
+use config::{BACKGROUND, DATA, FONT, HEIGHT, PLACEMENT, UNKOWN};
 use image::RgbaImage;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -25,12 +25,31 @@ use wayland_client::{
 };
 
 #[derive(Copy, Clone)]
+pub enum CpuOpts {
+    Perc,
+}
+
+#[derive(Copy, Clone)]
+pub enum BacklightOpts {
+    Perc,
+    Value,
+}
+
+#[derive(Copy, Clone)]
+pub enum RamOpts {
+    Used,
+    Free,
+    PercUsed,
+    PercFree,
+}
+
+#[derive(Copy, Clone)]
 pub enum Cmd {
     Custom(&'static str, &'static str),
-    Ram,
-    Backlight,
-    Cpu,
-    Workspaces,
+    Workspaces(&'static str, &'static str),
+    Backlight(BacklightOpts),
+    Ram(RamOpts),
+    Cpu(CpuOpts),
 }
 
 pub struct Font {
@@ -40,13 +59,13 @@ pub struct Font {
     color: [u8; 3],
 }
 
-struct OutputInfo {
+struct OutputDetails {
     output_id: u32,
     layer_surface: LayerSurface,
     output: wl_output::WlOutput,
 }
 
-struct Info {
+struct StatusData {
     output: String,
     command: Cmd,
     x: f64,
@@ -60,10 +79,10 @@ struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
-    outputs: Vec<OutputInfo>,
+    outputs: Vec<OutputDetails>,
     layer_shell: LayerShell,
     compositor_state: CompositorState,
-    information: Vec<Info>,
+    information: Vec<StatusData>,
 }
 
 impl StatusBar {
@@ -77,8 +96,8 @@ impl StatusBar {
 
         let information = DATA
             .iter()
-            .map(|(command, x, y, format, interval)| Info {
-                output: get_output(command),
+            .map(|(command, x, y, format, interval)| StatusData {
+                output: get_command_output(command).unwrap_or(UNKOWN.to_string()),
                 command: *command,
                 x: *x,
                 y: *y,
@@ -118,7 +137,7 @@ impl StatusBar {
 
             self.information.iter_mut().for_each(|info| {
                 if info.timestamp.elapsed().as_millis() >= info.interval as u128 {
-                    info.output = get_output(&info.command);
+                    info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
                     info.timestamp = Instant::now();
                 }
                 let format = info.format.replace("s%", &info.output);
@@ -160,23 +179,24 @@ impl OutputHandler for StatusBar {
             qh,
             surface,
             Layer::Bottom,
-            Some("status-bar"),
+            Some("ssb"),
             Some(&output),
         );
 
-        let info = self.output_state.info(&output).unwrap();
-        let (width, _) = info.logical_size.unwrap();
+        if let Some(info) = self.output_state.info(&output) {
+            if let Some((width, _)) = info.logical_size {
+                layer.set_size(width as u32, HEIGHT as u32);
+                layer.set_anchor(PLACEMENT);
+                layer.set_exclusive_zone(HEIGHT);
+                layer.commit();
 
-        layer.set_size(width as u32, HEIGHT as u32);
-        layer.set_anchor(PLACEMENT);
-        layer.set_exclusive_zone(HEIGHT);
-        layer.commit();
-
-        self.outputs.push(OutputInfo {
-            output_id: info.id,
-            layer_surface: layer,
-            output,
-        });
+                self.outputs.push(OutputDetails {
+                    output_id: info.id,
+                    layer_surface: layer,
+                    output,
+                });
+            }
+        }
     }
 
     fn update_output(
@@ -279,32 +299,14 @@ fn set_context_properties(context: &Context) {
     context.set_font_size(FONT.size);
 }
 
-fn get_output(d: &Cmd) -> String {
-    match d {
-        Cmd::Custom(command, args) => String::from_utf8(new_command(command, args))
-            .unwrap_or("N/A".to_string())
-            .trim()
-            .to_string(),
-        Cmd::Ram => util::get_ram()
-            .unwrap_or(0.0)
-            .to_string()
-            .split('.')
-            .collect::<Vec<_>>()[0]
-            .into(),
-        Cmd::Backlight => util::get_backlight()
-            .unwrap_or(0.0)
-            .to_string()
-            .split('.')
-            .collect::<Vec<_>>()[0]
-            .into(),
-        Cmd::Cpu => util::get_cpu()
-            .unwrap_or(0.0)
-            .to_string()
-            .split('.')
-            .collect::<Vec<_>>()[0]
-            .into(),
-        Cmd::Workspaces => util::get_current_workspace().unwrap_or("N/A".to_string()),
-    }
+fn get_command_output(d: &Cmd) -> Result<String, Box<dyn Error>> {
+    Ok(match d {
+        Cmd::Custom(command, args) => new_command(command, args)?,
+        Cmd::Workspaces(active, inactive) => util::get_current_workspace(active, inactive)?,
+        Cmd::Ram(opt) => util::get_ram(*opt)?.split('.').next().ok_or("")?.into(),
+        Cmd::Backlight(opt) => util::get_backlight()?.split('.').next().ok_or("")?.into(),
+        Cmd::Cpu(opt) => util::get_cpu()?.split('.').next().ok_or("")?.into(),
+    })
 }
 
 fn main() {
@@ -319,7 +321,7 @@ fn main() {
         event_queue
             .blocking_dispatch(&mut status_bar)
             .expect("Failed to dispatch events");
-        status_bar.draw().unwrap();
+        let _ = status_bar.draw();
     }
 }
 
