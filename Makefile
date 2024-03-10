@@ -7,5 +7,7 @@ install: all
 clean:
 	@cargo clean
 
+uninstall:
+	@rm /usr/bin/ssb
 
-.PHONY: all clean install
+.PHONY: all clean install uninstall

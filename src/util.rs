@@ -21,37 +21,33 @@ pub fn new_command(command: &str, args: &str) -> Vec<u8> {
         .stdout
 }
 
-pub fn get_ram() -> f64 {
+pub fn get_ram() -> Result<f64, Box<dyn Error>> {
     let output = new_command("free", "-m");
     let output = String::from_utf8_lossy(&output);
     let output = output.split_whitespace().collect::<Vec<&str>>();
-    let total = output[7].parse::<f64>().unwrap();
-    let used = output[8].parse::<f64>().unwrap();
-    (used / total) * 100.0
+    let total = output[7].parse::<f64>()?;
+    let used = output[8].parse::<f64>()?;
+    Ok((used / total) * 100.0)
 }
 
-pub fn get_backlight() -> f64 {
-    let brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/actual_brightness")
-        .unwrap()
+pub fn get_backlight() -> Result<f64, Box<dyn Error>> {
+    let brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/actual_brightness")?
         .trim()
-        .parse::<f64>()
-        .unwrap();
+        .parse::<f64>()?;
 
-    let max_brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/max_brightness")
-        .unwrap()
+    let max_brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/max_brightness")?
         .trim()
-        .parse::<f64>()
-        .unwrap();
+        .parse::<f64>()?;
 
-    (brightness / max_brightness) * 100.0
+    Ok((brightness / max_brightness) * 100.0)
 }
 
-pub fn get_cpu() -> f64 {
+pub fn get_cpu() -> Result<f64, Box<dyn Error>> {
     let output = new_command("mpstat", "");
     let output = String::from_utf8_lossy(&output);
     let output = output.split_whitespace().collect::<Vec<&str>>();
-    let idle = output.last().unwrap().parse::<f64>().unwrap();
-    100.0 - idle
+    let idle = output.last().ok_or("not found")?.parse::<f64>()?;
+    Ok(100.0 - idle)
 }
 
 pub fn get_current_workspace() -> Result<String, Box<dyn Error>> {

@@ -16,18 +16,15 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{collections::HashMap, error::Error};
+use std::error::Error;
 use util::{new_command, resize_image};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::{
-        wl_output::{self, WlOutput},
-        wl_shm,
-    },
+    protocol::{wl_output, wl_shm},
     Connection, QueueHandle,
 };
 
-pub enum Data {
+pub enum Cmd {
     Custom(&'static str, &'static str),
     Ram,
     Backlight,
@@ -36,98 +33,88 @@ pub enum Data {
 }
 
 pub struct Font {
-    font_family: &'static str,
-    font_size: f64,
-    bolded: bool,
+    family: &'static str,
+    size: f64,
+    bold: bool,
     color: [u8; 3],
+}
+
+#[derive(Debug)]
+struct OutputInfo {
+    output_id: u32,
+    layer_surface: LayerSurface,
+    output: wl_output::WlOutput,
 }
 
 struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
-    layers: HashMap<WlOutput, LayerSurface>,
+    outputs: Vec<OutputInfo>,
+    layer_shell: LayerShell,
+    compositor_state: CompositorState,
+    first_configure: bool,
 }
 
 impl StatusBar {
     fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>) -> Self {
-        let compositor = CompositorState::bind(globals, qh).expect("Failed to bind compositor");
+        let compositor_state =
+            CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect(
             "Failed to bind layer shell, check if the compositor supports layer shell protocol.",
         );
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
-        let output_state = OutputState::new(globals, qh);
-
-        let mut layers = HashMap::new();
-        output_state.outputs().for_each(|output| {
-            let surface = compositor.create_surface(qh);
-            let layer = layer_shell.create_layer_surface(
-                qh,
-                surface,
-                Layer::Bottom,
-                Some("status-bar"),
-                Some(&output),
-            );
-
-            layer.set_size(1, HEIGHT as u32);
-            layer.set_anchor(PLACEMENT);
-            layer.set_exclusive_zone(HEIGHT);
-            layer.commit();
-
-            layers.insert(output, layer);
-        });
 
         Self {
-            output_state,
+            compositor_state,
+            layer_shell,
+            output_state: OutputState::new(globals, qh),
             registry_state: RegistryState::new(globals),
             shm,
-            layers,
+            outputs: Vec::new(),
+            first_configure: true,
         }
     }
-    fn draw(&mut self) {
-        let _ = self.output_state().outputs().try_for_each(|output| {
+    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+        println!("{:#?}", self.outputs);
+        self.outputs.iter().try_for_each(|output| {
             let (width, _) = self
-                .output_state()
-                .info(&output)
+                .output_state
+                .info(&output.output)
                 .ok_or("Failed to get output info")?
                 .logical_size
                 .ok_or("Failed to get logical size of output")?;
+
             let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 4, &self.shm)?;
             let (buffer, canvas) =
                 pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-            let img_surface =
-                ImageSurface::create(Format::ARgb32, width, HEIGHT).expect("Can't create surface");
+            let img_surface = ImageSurface::create(Format::ARgb32, width, HEIGHT)?;
             let context = Context::new(&img_surface)?;
             set_context_properties(&context);
 
-            DATA.iter().for_each(|d| {
-                context.move_to(d.1, d.2);
-                let format = d.3;
-                let output = get_output(&d.0);
-                let format = format.replace('$', &output);
+            DATA.iter().for_each(|options| {
+                context.move_to(options.1, options.2);
+                let output = get_output(&options.0);
+                let format = options.3.replace("s%", &output);
                 let _ = context.show_text(&format);
             });
 
             let mut img = Vec::new();
-            img_surface
-                .write_to_png(&mut img)
-                .expect("Can't write to png");
+            img_surface.write_to_png(&mut img)?;
 
-            let img = RgbaImage::from(image::load_from_memory(&img).expect("Can't load image"));
-            let img = resize_image(&img, width as u32, HEIGHT as u32).unwrap();
+            let img = RgbaImage::from(image::load_from_memory(&img)?);
+            let img = resize_image(&img, width as u32, HEIGHT as u32)?;
 
             canvas.copy_from_slice(&img);
 
-            if let Some(layer) = self.layers.get(&output) {
-                layer.set_size(width as u32, HEIGHT as u32);
-                layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
-                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-                layer.commit();
-            };
+            let layer = &output.layer_surface;
+            layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
+            layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+            layer.commit();
 
             Ok::<(), Box<dyn Error>>(())
-        });
+        })
     }
 }
 
@@ -139,9 +126,32 @@ impl OutputHandler for StatusBar {
     fn new_output(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        qh: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
     ) {
+        let surface = self.compositor_state.create_surface(qh);
+        let layer = self.layer_shell.create_layer_surface(
+            qh,
+            surface,
+            Layer::Bottom,
+            Some("status-bar"),
+            Some(&output),
+        );
+
+        let info = self.output_state.info(&output).unwrap();
+
+        let (width, _) = info.logical_size.unwrap();
+
+        layer.set_size(width as u32, HEIGHT as u32);
+        layer.set_anchor(PLACEMENT);
+        layer.set_exclusive_zone(HEIGHT);
+        layer.commit();
+
+        self.outputs.push(OutputInfo {
+            output_id: info.id,
+            layer_surface: layer,
+            output,
+        });
     }
 
     fn update_output(
@@ -156,8 +166,11 @@ impl OutputHandler for StatusBar {
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        output: wl_output::WlOutput,
     ) {
+        if let Some(output_info) = self.output_state.info(&output) {
+            self.outputs.retain(|info| info.output_id != output_info.id);
+        }
     }
 }
 
@@ -230,31 +243,42 @@ fn set_context_properties(context: &Context) {
         FONT.color[0] as f64 / 255.0,
     );
     context.select_font_face(
-        FONT.font_family,
+        FONT.family,
         cairo::FontSlant::Normal,
-        if FONT.bolded {
+        if FONT.bold {
             cairo::FontWeight::Bold
         } else {
             cairo::FontWeight::Normal
         },
     );
-    context.set_font_size(FONT.font_size);
+    context.set_font_size(FONT.size);
 }
 
-fn get_output(d: &Data) -> String {
+fn get_output(d: &Cmd) -> String {
     match d {
-        Data::Custom(command, args) => String::from_utf8(new_command(command, args))
-            .unwrap()
+        Cmd::Custom(command, args) => String::from_utf8(new_command(command, args))
+            .unwrap_or("N/A".to_string())
             .trim()
             .to_string(),
-        Data::Ram => util::get_ram().to_string().split('.').collect::<Vec<_>>()[0].into(),
-        Data::Backlight => util::get_backlight()
+        Cmd::Ram => util::get_ram()
+            .unwrap_or(0.0)
             .to_string()
             .split('.')
             .collect::<Vec<_>>()[0]
             .into(),
-        Data::Cpu => util::get_cpu().to_string().split('.').collect::<Vec<_>>()[0].into(),
-        Data::Workspaces => util::get_current_workspace()
+        Cmd::Backlight => util::get_backlight()
+            .unwrap_or(0.0)
+            .to_string()
+            .split('.')
+            .collect::<Vec<_>>()[0]
+            .into(),
+        Cmd::Cpu => util::get_cpu()
+            .unwrap_or(0.0)
+            .to_string()
+            .split('.')
+            .collect::<Vec<_>>()[0]
+            .into(),
+        Cmd::Workspaces => util::get_current_workspace()
             .unwrap_or("N/A".to_string())
             .to_string(),
     }
@@ -264,11 +288,16 @@ fn main() {
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
-    let mut bar = StatusBar::new(&globals, &qh);
-
+    let mut status_bar = StatusBar::new(&globals, &qh);
     loop {
-        let _ = event_queue.blocking_dispatch(&mut bar);
-        bar.draw();
+        event_queue
+            .blocking_dispatch(&mut status_bar)
+            .expect("Failed to dispatch events");
+        if status_bar.first_configure {
+            status_bar.first_configure = false;
+            continue;
+        }
+        let _ = status_bar.draw();
     }
 }
 
