@@ -2,7 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{BACKGROUND, DATA, FONT, HEIGHT, PLACEMENT, UNKOWN};
+use config::{BACKGROUND, COMMAND_CONFIGS, FONT, HEIGHT, PLACEMENT, UNKOWN};
 use image::RgbaImage;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -94,7 +94,7 @@ impl StatusBar {
         );
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
-        let information = DATA
+        let information = COMMAND_CONFIGS
             .iter()
             .map(|(command, x, y, format, interval)| StatusData {
                 output: get_command_output(command).unwrap_or(UNKOWN.to_string()),

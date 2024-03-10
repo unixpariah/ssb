@@ -5,15 +5,15 @@ use smithay_client_toolkit::shell::wlr_layer::Anchor;
 pub const UNKOWN: &str = "N/A";
 
 // Background color               R   G   B   A
-pub static BACKGROUND: [u8; 4] = [20, 15, 33, 255];
+pub const BACKGROUND: [u8; 4] = [20, 15, 33, 255];
 
 // Placement of status bar
 // Options:
 // - Anchor::TOP
 // - Anchor::BOTTOM
-pub static PLACEMENT: Anchor = Anchor::TOP;
-pub static HEIGHT: i32 = 40; // Height of status bar in pixels
-pub static FONT: Font = Font {
+pub const PLACEMENT: Anchor = Anchor::TOP;
+pub const HEIGHT: i32 = 40; // Height of status bar in pixels
+pub const FONT: Font = Font {
     family: "JetBrainsMono Nerd Font",
     size: 16.0,
     bold: true,
@@ -41,16 +41,35 @@ pub static FONT: Font = Font {
  *  Cmd::Cpu          This function provides information about the CPU.          It takes one argument: an enum representing the type of data to display   (CpuOpts::Perc)
  *                                                                               This could be the percentage of CPU used, the actual CPU speed,
  *                                                                               or any other relevant information.
+ *
+ *
+ *  The COMMAND_CONFIGS array is a static array of tuples. Each tuple represents a command to be executed, along with its associated properties.
+ *
+ *  Tuple Element    Description
+ *  --------------   ---------------------------------------------------------------------------------------------------
+ *  Command          The command to be executed. This could be a custom command or one of the predefined commands.
+ *
+ *  x                The x-coordinate where the output of the command will be displayed on the screen.
+ *
+ *  y                The y-coordinate where the output of the command will be displayed on the screen.
+ *
+ *  format           The format in which the output of the command will be displayed. The 's%' is a placeholder where the output of the command will be placed.
+ *
+ *  interval(ms)     The interval in milliseconds at which the command will be executed.
+ *
  */
 
+// The number of command entries in the COMMAND_CONFIGS array. We use a static array for more efficient access.
+const COMMAND_NUM: usize = 7;
+
 #[rustfmt::skip]
-pub static DATA: [(Cmd, f64, f64, &str, usize); 7] = [
+pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, usize); COMMAND_NUM] = [
     // Command                                x        y      format    interval(ms)
-    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  50     ),
+    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  100    ),
     (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   60000  ),
     (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  60000  ),
-    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     50     ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  50     ),
+    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     100     ),
+    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  100     ),
     (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  5000   ),
     (Cmd::Cpu(CpuOpts::Perc),                 1700.0,  25.0,  " s%%",  5000   ),
 ];
