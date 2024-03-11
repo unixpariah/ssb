@@ -1,10 +1,18 @@
 use crate::{BacklightOpts, Cmd, CpuOpts, Font, RamOpts};
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
 
+/*               _                        __ _                       _   _
+ *       ___ ___| |__     ___ ___  _ __  / _(_) __ _ _   _ _ __ __ _| |_(_) ___  _ __
+ *      / __/ __| '_ \   / __/ _ \| '_ \| |_| |/ _` | | | | '__/ _` | __| |/ _ \| '_ \
+ *      \__ \__ \ |_) | | (_| (_) | | | |  _| | (_| | |_| | | | (_| | |_| | (_) | | | |
+ *      |___/___/_.__/   \___\___/|_| |_|_| |_|\__, |\__,_|_|  \__,_|\__|_|\___/|_| |_|
+ *                                             |___/
+ */
+
 // Value to display when data is not available
 pub const UNKOWN: &str = "N/A";
 
-// Background color               R   G   B   A
+// Background color              R   G   B   A
 pub const BACKGROUND: [u8; 4] = [20, 15, 33, 255];
 
 // Placement of status bar
@@ -23,7 +31,7 @@ pub const FONT: Font = Font {
 
 /*
  *  Function          Description                                                Argument                                                                 Example
- *
+ *  --------------    ---------------------------------------------------------  -----------------------------------------------------------------------  ----------------
  *  Cmd::Custom       This function allows you to run any custom command         It takes two arguments: the command to run and its arguments             ("pamixer", "--get-volume")
  *                    that you specify.                                          These are typically passed as strings.
  *

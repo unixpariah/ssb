@@ -101,7 +101,7 @@ impl StatusBar {
                 command: *command,
                 x: *x,
                 y: *y,
-                format: *format,
+                format,
                 interval: *interval,
                 timestamp: Instant::now(),
             })
@@ -135,15 +135,21 @@ impl StatusBar {
             let context = Context::new(&surface)?;
             set_context_properties(&context);
 
+            let mut unedited = 0;
             self.information.iter_mut().for_each(|info| {
                 if info.timestamp.elapsed().as_millis() >= info.interval as u128 {
                     info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
                     info.timestamp = Instant::now();
+                    unedited += 1;
                 }
                 let format = info.format.replace("s%", &info.output);
                 context.move_to(info.x, info.y);
                 let _ = context.show_text(&format);
             });
+
+            if unedited == self.information.len() {
+                return Ok(());
+            }
 
             let mut img = Vec::new();
             surface.write_to_png(&mut img)?;
@@ -318,13 +324,13 @@ fn main() {
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
     let mut status_bar = StatusBar::new(&globals, &qh);
-    event_queue
-        .blocking_dispatch(&mut status_bar)
-        .expect("Failed to dispatch events");
     loop {
         event_queue
             .blocking_dispatch(&mut status_bar)
             .expect("Failed to dispatch events");
+        event_queue
+            .roundtrip(&mut status_bar)
+            .expect("Failed to roundtrip");
         let _ = status_bar.draw();
     }
 }
