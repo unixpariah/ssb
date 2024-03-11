@@ -5,6 +5,7 @@ Ssb is a simple status bar for wayland (with plans of adding x11 support) writte
 ## Dependencies
 
 - Compositor implementing the wlr-layer-shell protocol (Hyprland, sway, wayfire, etc.)
+- cairo
 - rust
 
 ## Installation

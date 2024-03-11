@@ -1,4 +1,4 @@
-use crate::{BacklightOpts, Cmd, CpuOpts, Font, RamOpts};
+use crate::{Cmd, Font};
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
 
 /*               _                        __ _                       _   _
@@ -63,7 +63,7 @@ pub const FONT: Font = Font {
  *
  *  format           The format in which the output of the command will be displayed. The 's%' is a placeholder where the output of the command will be placed.
  *
- *  interval(ms)     The interval in milliseconds at which the command will be executed.
+ *  Trigger          The event that will trigger the command to be executed. This could be a time interval, a workspace change, or any other relevant event.
  *
  */
 
@@ -71,13 +71,33 @@ pub const FONT: Font = Font {
 const COMMAND_NUM: usize = 7;
 
 #[rustfmt::skip]
-pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, usize); COMMAND_NUM] = [
-    // Command                                x        y      format    interval(ms)
-    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  100    ),
-    (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   60000  ),
-    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  60000  ),
-    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     100     ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  100     ),
-    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  5000   ),
-    (Cmd::Cpu(CpuOpts::Perc),                 1700.0,  25.0,  " s%%",  5000   ),
+pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, Event); COMMAND_NUM] = [
+    // Command                                x        y      format    Trigger
+    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  Event::TimePassed(100)    ),
+    (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Event::TimePassed(60000)  ),
+    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Event::TimePassed(60000)  ),
+    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Event::WorkspaceChanged   ),
+    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Event::TimePassed(100)    ),
+    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Event::TimePassed(5000)   ),
+    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Event::TimePassed(5000)   ),
 ];
+
+#[derive(Copy, Clone)]
+pub enum Event {
+    WorkspaceChanged,
+    TimePassed(usize),
+}
+
+#[derive(Copy, Clone)]
+pub enum BacklightOpts {
+    Perc,
+    Value,
+}
+
+#[derive(Copy, Clone)]
+pub enum RamOpts {
+    Used,
+    Free,
+    PercUsed,
+    PercFree,
+}

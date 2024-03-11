@@ -1,7 +1,10 @@
-use crate::{BacklightOpts, CpuOpts, RamOpts};
-use fast_image_resize::{FilterType, PixelType, Resizer};
-use image::RgbaImage;
-use std::{error::Error, fs, num::NonZeroU32, process::Command};
+use crate::{
+    config::{BACKGROUND, FONT, UNKOWN},
+    BacklightOpts, Cmd, Events, RamOpts, StatusData,
+};
+use cairo::Context;
+use hyprland::shared::{HyprData, HyprDataActive, HyprDataVec};
+use std::{error::Error, fs, process::Command, time::Instant};
 
 pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> {
     Ok(String::from_utf8(
@@ -44,35 +47,20 @@ pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
     }
 }
 
-pub fn get_cpu(opts: CpuOpts) -> Result<String, Box<dyn Error>> {
+pub fn get_cpu() -> Result<String, Box<dyn Error>> {
     let output = new_command("mpstat", "")?;
     let output = output.split_whitespace().collect::<Vec<&str>>();
     let idle = output.last().ok_or("not found")?.parse::<f64>()?;
 
-    match opts {
-        CpuOpts::Perc => Ok((100.0 - idle).to_string()),
-    }
+    Ok((100.0 - idle).to_string())
 }
 
 pub fn get_current_workspace(
     active: &'static str,
     inactive: &'static str,
 ) -> Result<String, Box<dyn Error>> {
-    let workspaces = new_command("hyprctl", "workspaces -j")?;
-
-    let active_workspace = Command::new("hyprctl")
-        .args(["activeworkspace", "-j"])
-        .output()?
-        .stdout;
-    let active_workspace = String::from_utf8(active_workspace)?;
-
-    let active_workspace = serde_json::from_str::<serde_json::Value>(&active_workspace)?;
-    let active_workspace = active_workspace.get("id").ok_or("")?.as_i64().ok_or("")? as usize - 1;
-
-    let length = serde_json::from_str::<serde_json::Value>(&workspaces)?
-        .as_array()
-        .ok_or("")?
-        .len();
+    let active_workspace = hyprland::data::Workspace::get_active().unwrap().id as usize - 1;
+    let length = hyprland::data::Workspaces::get()?.to_vec().len();
 
     Ok((0..length)
         .map(|i| {
@@ -85,48 +73,62 @@ pub fn get_current_workspace(
         .collect::<String>())
 }
 
-pub fn resize_image(image: &RgbaImage, width: u32, height: u32) -> Result<Vec<u8>, Box<dyn Error>> {
-    let (img_w, img_h) = image.dimensions();
-    let image = image.as_raw().to_vec();
+pub fn update_workspace_changed(info: &mut StatusData, events: &Events) -> bool {
+    if let Ok(event) = events.active_window_change.1.try_recv() {
+        if event {
+            info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
+            if let Ok(tx) = events.active_window_change.0.try_borrow() {
+                let _ = tx.send(false);
+            }
 
-    if img_w == width && img_h == height {
-        return Ok(image);
+            return true;
+        }
     }
 
-    let ratio = width as f32 / height as f32;
-    let img_r = img_w as f32 / img_h as f32;
+    false
+}
 
-    let (trg_w, trg_h) = if ratio > img_r {
-        let scale = height as f32 / img_h as f32;
-        ((img_w as f32 * scale) as u32, height)
-    } else {
-        let scale = width as f32 / img_w as f32;
-        (width, (img_h as f32 * scale) as u32)
-    };
+pub fn update_time_passed(info: &mut StatusData, interval: u128) -> bool {
+    if info.timestamp.elapsed().as_millis() >= interval {
+        info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
+        info.timestamp = Instant::now();
 
-    let trg_w = trg_w.min(width);
-    let trg_h = trg_h.min(height);
+        return true;
+    }
+    false
+}
 
-    // If img_w, img_h, trg_w or trg_h is 0 you have bigger problems than unsafety
-    let src = fast_image_resize::Image::from_vec_u8(
-        unsafe { NonZeroU32::new_unchecked(img_w) },
-        unsafe { NonZeroU32::new_unchecked(img_h) },
-        image,
-        PixelType::U8x4,
-    )?;
+pub fn set_context_properties(context: &Context) {
+    context.set_source_rgba(
+        BACKGROUND[2] as f64 / 255.0,
+        BACKGROUND[1] as f64 / 255.0,
+        BACKGROUND[0] as f64 / 255.0,
+        BACKGROUND[3] as f64 / 255.0,
+    );
+    let _ = context.paint();
+    context.set_source_rgb(
+        FONT.color[2] as f64 / 255.0,
+        FONT.color[1] as f64 / 255.0,
+        FONT.color[0] as f64 / 255.0,
+    );
+    context.select_font_face(
+        FONT.family,
+        cairo::FontSlant::Normal,
+        if FONT.bold {
+            cairo::FontWeight::Bold
+        } else {
+            cairo::FontWeight::Normal
+        },
+    );
+    context.set_font_size(FONT.size);
+}
 
-    let new_w = unsafe { NonZeroU32::new_unchecked(trg_w) };
-    let new_h = unsafe { NonZeroU32::new_unchecked(trg_h) };
-
-    let mut dst = fast_image_resize::Image::new(new_w, new_h, PixelType::U8x3);
-    let mut dst_view = dst.view_mut();
-
-    let mut resizer = Resizer::new(fast_image_resize::ResizeAlg::Convolution(
-        FilterType::Lanczos3,
-    ));
-
-    resizer.resize(&src.view(), &mut dst_view)?;
-
-    let dst = dst.into_vec();
-    Ok(dst)
+pub fn get_command_output(d: &Cmd) -> Result<String, Box<dyn Error>> {
+    Ok(match d {
+        Cmd::Custom(command, args) => new_command(command, args)?,
+        Cmd::Workspaces(active, inactive) => get_current_workspace(active, inactive)?,
+        Cmd::Ram(opt) => get_ram(*opt)?.split('.').next().ok_or("")?.into(),
+        Cmd::Backlight(opt) => get_backlight(*opt)?.split('.').next().ok_or("")?.into(),
+        Cmd::Cpu => get_cpu()?.split('.').next().ok_or("")?.into(),
+    })
 }

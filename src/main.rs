@@ -2,7 +2,8 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{BACKGROUND, COMMAND_CONFIGS, FONT, HEIGHT, PLACEMENT, UNKOWN};
+use config::{BacklightOpts, Event, RamOpts, COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
+use hyprland::event_listener::EventListener;
 use image::RgbaImage;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -16,8 +17,17 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, time::Instant};
-use util::{new_command, resize_image};
+use std::{
+    cell::RefCell,
+    error::Error,
+    rc::Rc,
+    sync::mpsc::{Receiver, Sender},
+    thread,
+    time::{Duration, Instant},
+};
+use util::{
+    get_command_output, set_context_properties, update_time_passed, update_workspace_changed,
+};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
     protocol::{wl_output, wl_shm},
@@ -25,31 +35,12 @@ use wayland_client::{
 };
 
 #[derive(Copy, Clone)]
-pub enum CpuOpts {
-    Perc,
-}
-
-#[derive(Copy, Clone)]
-pub enum BacklightOpts {
-    Perc,
-    Value,
-}
-
-#[derive(Copy, Clone)]
-pub enum RamOpts {
-    Used,
-    Free,
-    PercUsed,
-    PercFree,
-}
-
-#[derive(Copy, Clone)]
 pub enum Cmd {
     Custom(&'static str, &'static str),
     Workspaces(&'static str, &'static str),
     Backlight(BacklightOpts),
     Ram(RamOpts),
-    Cpu(CpuOpts),
+    Cpu,
 }
 
 pub struct Font {
@@ -71,8 +62,12 @@ struct StatusData {
     x: f64,
     y: f64,
     format: &'static str,
-    interval: usize,
+    event: Event,
     timestamp: Instant,
+}
+
+struct Events {
+    active_window_change: (Rc<RefCell<Sender<bool>>>, Receiver<bool>),
 }
 
 struct StatusBar {
@@ -83,10 +78,15 @@ struct StatusBar {
     layer_shell: LayerShell,
     compositor_state: CompositorState,
     information: Vec<StatusData>,
+    events: Events,
 }
 
 impl StatusBar {
-    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>) -> Self {
+    fn new(
+        globals: &GlobalList,
+        qh: &wayland_client::QueueHandle<Self>,
+        channel: (Rc<RefCell<Sender<bool>>>, Receiver<bool>),
+    ) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect(
@@ -96,16 +96,20 @@ impl StatusBar {
 
         let information = COMMAND_CONFIGS
             .iter()
-            .map(|(command, x, y, format, interval)| StatusData {
+            .map(|(command, x, y, format, event)| StatusData {
                 output: get_command_output(command).unwrap_or(UNKOWN.to_string()),
                 command: *command,
                 x: *x,
                 y: *y,
                 format,
-                interval: *interval,
+                event: *event,
                 timestamp: Instant::now(),
             })
             .collect();
+
+        let events = Events {
+            active_window_change: channel,
+        };
 
         Self {
             compositor_state,
@@ -115,6 +119,7 @@ impl StatusBar {
             shm,
             outputs: Vec::new(),
             information,
+            events,
         }
     }
 
@@ -135,27 +140,21 @@ impl StatusBar {
             let context = Context::new(&surface)?;
             set_context_properties(&context);
 
-            let mut unedited = 0;
             self.information.iter_mut().for_each(|info| {
-                if info.timestamp.elapsed().as_millis() >= info.interval as u128 {
-                    info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
-                    info.timestamp = Instant::now();
-                    unedited += 1;
-                }
+                match info.event {
+                    Event::TimePassed(interval) => update_time_passed(info, interval as u128),
+                    Event::WorkspaceChanged => update_workspace_changed(info, &self.events),
+                };
+
                 let format = info.format.replace("s%", &info.output);
                 context.move_to(info.x, info.y);
                 let _ = context.show_text(&format);
             });
 
-            if unedited == self.information.len() {
-                return Ok(());
-            }
-
             let mut img = Vec::new();
             surface.write_to_png(&mut img)?;
 
             let img = RgbaImage::from(image::load_from_memory(&img)?);
-            let img = resize_image(&img, width as u32, HEIGHT as u32)?;
 
             canvas.copy_from_slice(&img);
 
@@ -280,50 +279,32 @@ impl ShmHandler for StatusBar {
     }
 }
 
-fn set_context_properties(context: &Context) {
-    context.set_source_rgba(
-        BACKGROUND[2] as f64 / 255.0,
-        BACKGROUND[1] as f64 / 255.0,
-        BACKGROUND[0] as f64 / 255.0,
-        BACKGROUND[3] as f64 / 255.0,
-    );
-    let _ = context.paint();
-    context.set_source_rgb(
-        FONT.color[2] as f64 / 255.0,
-        FONT.color[1] as f64 / 255.0,
-        FONT.color[0] as f64 / 255.0,
-    );
-    context.select_font_face(
-        FONT.family,
-        cairo::FontSlant::Normal,
-        if FONT.bold {
-            cairo::FontWeight::Bold
-        } else {
-            cairo::FontWeight::Normal
-        },
-    );
-    context.set_font_size(FONT.size);
-}
-
-fn get_command_output(d: &Cmd) -> Result<String, Box<dyn Error>> {
-    Ok(match d {
-        Cmd::Custom(command, args) => new_command(command, args)?,
-        Cmd::Workspaces(active, inactive) => util::get_current_workspace(active, inactive)?,
-        Cmd::Ram(opt) => util::get_ram(*opt)?.split('.').next().ok_or("")?.into(),
-        Cmd::Backlight(opt) => util::get_backlight(*opt)?
-            .split('.')
-            .next()
-            .ok_or("")?
-            .into(),
-        Cmd::Cpu(opt) => util::get_cpu(*opt)?.split('.').next().ok_or("")?.into(),
-    })
-}
-
 fn main() {
+    let mut first_run = true;
+
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
-    let mut status_bar = StatusBar::new(&globals, &qh);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx = Rc::new(RefCell::new(tx));
+
+    let mut status_bar = StatusBar::new(&globals, &qh, (Rc::clone(&tx), rx));
+    let mut listener = EventListener::new();
+
+    {
+        let tx = Rc::clone(&tx);
+        listener.add_active_window_change_handler(move |_| {
+            if let Ok(tx) = tx.try_borrow() {
+                let _ = tx.send(true);
+            }
+        });
+    }
+
+    thread::spawn(move || {
+        let _ = listener.start_listener();
+    });
+
     loop {
         event_queue
             .blocking_dispatch(&mut status_bar)
@@ -331,7 +312,25 @@ fn main() {
         event_queue
             .roundtrip(&mut status_bar)
             .expect("Failed to roundtrip");
+
         let _ = status_bar.draw();
+
+        loop {
+            let break_loop = status_bar
+                .information
+                .iter_mut()
+                .any(|info| match info.event {
+                    Event::TimePassed(interval) => update_time_passed(info, interval as u128),
+                    Event::WorkspaceChanged => update_workspace_changed(info, &status_bar.events),
+                });
+
+            if break_loop || first_run {
+                first_run = false;
+                break;
+            }
+
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 }
 
