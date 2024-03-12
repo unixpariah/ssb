@@ -305,11 +305,11 @@ fn main() {
 
     loop {
         event_queue
-            .blocking_dispatch(&mut status_bar)
-            .expect("Failed to dispatch events");
-        event_queue
             .roundtrip(&mut status_bar)
             .expect("Failed to roundtrip");
+        event_queue
+            .blocking_dispatch(&mut status_bar)
+            .expect("Failed to dispatch events");
 
         let _ = status_bar.draw();
 

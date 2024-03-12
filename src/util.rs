@@ -60,26 +60,19 @@ pub fn get_current_workspace(
     inactive: &'static str,
 ) -> Result<String, Box<dyn Error>> {
     let active_workspace = hyprland::data::Workspace::get_active().unwrap().id as usize;
-    let mut length = 0;
-    hyprland::data::Workspaces::get()?
+    let length = hyprland::data::Workspaces::get()?
         .iter()
-        .for_each(|workspace| {
-            if workspace.id as usize == active_workspace || workspace.windows > 0 {
-                length += 1;
-            }
-        });
+        .filter(|workspace| workspace.id as usize == active_workspace || workspace.windows > 0)
+        .count();
 
-    let o = (0..length)
+    Ok((0..length)
         .map(|i| {
             if i == active_workspace - 1 || i == length - 1 && active_workspace > length {
-                format!("{} ", active)
-            } else {
-                format!("{} ", inactive)
+                return format!("{} ", active);
             }
+            format!("{} ", inactive)
         })
-        .collect::<String>();
-
-    Ok(o)
+        .collect::<String>())
 }
 
 pub fn update_workspace_changed(info: &mut StatusData, events: &Events) {
