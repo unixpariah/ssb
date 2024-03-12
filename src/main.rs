@@ -183,7 +183,7 @@ impl OutputHandler for StatusBar {
         let layer = self.layer_shell.create_layer_surface(
             qh,
             surface,
-            Layer::Bottom,
+            Layer::Top,
             Some("ssb"),
             Some(&output),
         );
@@ -299,17 +299,26 @@ fn main() {
         });
     }
 
+    {
+        let tx = Rc::clone(&tx);
+        listener.add_active_monitor_change_handler(move |_| {
+            if let Ok(tx) = tx.try_borrow() {
+                let _ = tx.send(true);
+            }
+        });
+    }
+
     thread::spawn(move || {
         let _ = listener.start_listener();
     });
 
+    event_queue
+        .blocking_dispatch(&mut status_bar)
+        .expect("Failed to dispatch events");
     loop {
         event_queue
             .roundtrip(&mut status_bar)
             .expect("Failed to roundtrip");
-        event_queue
-            .blocking_dispatch(&mut status_bar)
-            .expect("Failed to dispatch events");
 
         let _ = status_bar.draw();
 

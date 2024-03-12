@@ -60,10 +60,7 @@ pub fn get_current_workspace(
     inactive: &'static str,
 ) -> Result<String, Box<dyn Error>> {
     let active_workspace = hyprland::data::Workspace::get_active().unwrap().id as usize;
-    let length = hyprland::data::Workspaces::get()?
-        .iter()
-        .filter(|workspace| workspace.id as usize == active_workspace || workspace.windows > 0)
-        .count();
+    let length = hyprland::data::Workspaces::get()?.iter().count();
 
     Ok((0..length)
         .map(|i| {
