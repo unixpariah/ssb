@@ -71,19 +71,19 @@ pub const FONT: Font = Font {
 const COMMAND_NUM: usize = 7;
 
 #[rustfmt::skip]
-pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, Event); COMMAND_NUM] = [
+pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, Trigger); COMMAND_NUM] = [
     // Command                                x        y      format    Trigger
-    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  Event::TimePassed(100)    ),
-    (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Event::TimePassed(60000)  ),
-    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Event::TimePassed(60000)  ),
-    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Event::WorkspaceChanged   ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Event::TimePassed(100)    ),
-    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Event::TimePassed(5000)   ),
-    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Event::TimePassed(5000)   ),
+    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  Trigger::TimePassed(100)    ),
+    (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Trigger::TimePassed(60000)  ),
+    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Trigger::TimePassed(60000)  ),
+    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Trigger::WorkspaceChanged   ),
+    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::TimePassed(100)    ),
+    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Trigger::TimePassed(5000)   ),
+    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Trigger::TimePassed(5000)   ),
 ];
 
 #[derive(Copy, Clone)]
-pub enum Event {
+pub enum Trigger {
     WorkspaceChanged,
     TimePassed(usize),
 }

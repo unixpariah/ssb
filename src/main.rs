@@ -2,7 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{BacklightOpts, Event, RamOpts, COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
+use config::{BacklightOpts, RamOpts, Trigger, COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
 use hyprland::event_listener::EventListener;
 use image::RgbaImage;
 use smithay_client_toolkit::{
@@ -56,17 +56,17 @@ struct OutputDetails {
     output: wl_output::WlOutput,
 }
 
-struct StatusData {
+pub struct StatusData {
     output: String,
     command: Cmd,
     x: f64,
     y: f64,
     format: &'static str,
-    event: Event,
+    event: Trigger,
     timestamp: Instant,
 }
 
-struct Events {
+pub struct Events {
     active_window_change: (Rc<RefCell<Sender<bool>>>, Receiver<bool>),
 }
 
@@ -136,14 +136,14 @@ impl StatusBar {
             let (buffer, canvas) =
                 pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-            let surface = ImageSurface::create(Format::ARgb32, width, HEIGHT).unwrap();
-            let context = Context::new(&surface).unwrap();
+            let surface = ImageSurface::create(Format::ARgb32, width, HEIGHT)?;
+            let context = Context::new(&surface)?;
             set_context_properties(&context);
 
             self.information.iter_mut().for_each(|info| {
                 match info.event {
-                    Event::TimePassed(interval) => update_time_passed(info, interval as u128),
-                    Event::WorkspaceChanged => update_workspace_changed(info, &self.events),
+                    Trigger::TimePassed(interval) => update_time_passed(info, interval as u128),
+                    Trigger::WorkspaceChanged => update_workspace_changed(info, &self.events),
                 };
 
                 let format = info.format.replace("s%", &info.output);
@@ -153,6 +153,7 @@ impl StatusBar {
 
             let mut img = Vec::new();
             surface.write_to_png(&mut img)?;
+
             let img = RgbaImage::from(image::load_from_memory(&img)?);
 
             canvas.copy_from_slice(&img);
@@ -302,8 +303,6 @@ fn main() {
         let _ = listener.start_listener();
     });
 
-    let mut first_run = true;
-
     loop {
         event_queue
             .blocking_dispatch(&mut status_bar)
@@ -319,12 +318,28 @@ fn main() {
                 .information
                 .iter_mut()
                 .any(|info| match info.event {
-                    Event::TimePassed(interval) => update_time_passed(info, interval as u128),
-                    Event::WorkspaceChanged => update_workspace_changed(info, &status_bar.events),
+                    Trigger::TimePassed(interval) => {
+                        if info.timestamp.elapsed().as_millis() >= interval as u128 {
+                            return true;
+                        }
+                        false
+                    }
+                    Trigger::WorkspaceChanged => {
+                        if let Ok(event) = status_bar.events.active_window_change.1.try_recv() {
+                            let _ = status_bar
+                                .events
+                                .active_window_change
+                                .0
+                                .borrow()
+                                .send(event);
+
+                            return event;
+                        }
+                        false
+                    }
                 });
 
-            if break_loop || first_run {
-                first_run = false;
+            if break_loop {
                 break;
             }
 

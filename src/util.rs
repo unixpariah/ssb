@@ -48,10 +48,11 @@ pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
 }
 
 pub fn get_cpu() -> Result<String, Box<dyn Error>> {
-    let sys = sysinfo::System::new_all();
-    let cpu = sys.global_cpu_info().cpu_usage();
+    let output = new_command("mpstat", "")?;
+    let output = output.split_whitespace().collect::<Vec<&str>>();
+    let idle = output.last().ok_or("not found")?.parse::<f64>()?;
 
-    Ok((cpu.round()).to_string())
+    Ok((100.0 - idle).to_string())
 }
 
 pub fn get_current_workspace(
@@ -61,40 +62,35 @@ pub fn get_current_workspace(
     let active_workspace = hyprland::data::Workspace::get_active().unwrap().id as usize - 1;
     let length = hyprland::data::Workspaces::get()?.to_vec().len();
 
-    Ok((0..length)
+    let o = (0..length)
         .map(|i| {
-            if i == active_workspace || i == length - 1 && active_workspace >= length {
+            if i == active_workspace {
                 format!("{} ", active)
             } else {
                 format!("{} ", inactive)
             }
         })
-        .collect::<String>())
+        .collect::<String>();
+
+    Ok(o)
 }
 
-pub fn update_workspace_changed(info: &mut StatusData, events: &Events) -> bool {
+pub fn update_workspace_changed(info: &mut StatusData, events: &Events) {
     if let Ok(event) = events.active_window_change.1.try_recv() {
         if event {
             info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
             if let Ok(tx) = events.active_window_change.0.try_borrow() {
                 let _ = tx.send(false);
             }
-
-            return true;
         }
     }
-
-    false
 }
 
-pub fn update_time_passed(info: &mut StatusData, interval: u128) -> bool {
+pub fn update_time_passed(info: &mut StatusData, interval: u128) {
     if info.timestamp.elapsed().as_millis() >= interval {
         info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
         info.timestamp = Instant::now();
-
-        return true;
     }
-    false
 }
 
 pub fn set_context_properties(context: &Context) {
