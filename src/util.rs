@@ -3,7 +3,7 @@ use crate::{
     BacklightOpts, Cmd, Events, RamOpts, StatusData,
 };
 use cairo::Context;
-use hyprland::shared::{HyprData, HyprDataActive, HyprDataVec};
+use hyprland::shared::{HyprData, HyprDataActive};
 use std::{error::Error, fs, process::Command, time::Instant};
 
 pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> {
@@ -59,12 +59,19 @@ pub fn get_current_workspace(
     active: &'static str,
     inactive: &'static str,
 ) -> Result<String, Box<dyn Error>> {
-    let active_workspace = hyprland::data::Workspace::get_active().unwrap().id as usize - 1;
-    let length = hyprland::data::Workspaces::get()?.to_vec().len();
+    let active_workspace = hyprland::data::Workspace::get_active().unwrap().id as usize;
+    let mut length = 0;
+    hyprland::data::Workspaces::get()?
+        .iter()
+        .for_each(|workspace| {
+            if workspace.id as usize == active_workspace || workspace.windows > 0 {
+                length += 1;
+            }
+        });
 
     let o = (0..length)
         .map(|i| {
-            if i == active_workspace {
+            if i == active_workspace - 1 || i == length - 1 && active_workspace > length {
                 format!("{} ", active)
             } else {
                 format!("{} ", inactive)

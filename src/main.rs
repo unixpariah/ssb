@@ -292,7 +292,7 @@ fn main() {
 
     {
         let tx = Rc::clone(&tx);
-        listener.add_active_window_change_handler(move |_| {
+        listener.add_workspace_change_handler(move |_| {
             if let Ok(tx) = tx.try_borrow() {
                 let _ = tx.send(true);
             }
