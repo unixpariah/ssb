@@ -48,11 +48,10 @@ pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
 }
 
 pub fn get_cpu() -> Result<String, Box<dyn Error>> {
-    let output = new_command("mpstat", "")?;
-    let output = output.split_whitespace().collect::<Vec<&str>>();
-    let idle = output.last().ok_or("not found")?.parse::<f64>()?;
+    let sys = sysinfo::System::new_all();
+    let cpu = sys.global_cpu_info().cpu_usage();
 
-    Ok((100.0 - idle).to_string())
+    Ok((cpu.round()).to_string())
 }
 
 pub fn get_current_workspace(
@@ -123,8 +122,8 @@ pub fn set_context_properties(context: &Context) {
     context.set_font_size(FONT.size);
 }
 
-pub fn get_command_output(d: &Cmd) -> Result<String, Box<dyn Error>> {
-    Ok(match d {
+pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
+    Ok(match command {
         Cmd::Custom(command, args) => new_command(command, args)?,
         Cmd::Workspaces(active, inactive) => get_current_workspace(active, inactive)?,
         Cmd::Ram(opt) => get_ram(*opt)?.split('.').next().ok_or("")?.into(),

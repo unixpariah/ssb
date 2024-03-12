@@ -136,8 +136,8 @@ impl StatusBar {
             let (buffer, canvas) =
                 pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
 
-            let surface = ImageSurface::create(Format::ARgb32, width, HEIGHT)?;
-            let context = Context::new(&surface)?;
+            let surface = ImageSurface::create(Format::ARgb32, width, HEIGHT).unwrap();
+            let context = Context::new(&surface).unwrap();
             set_context_properties(&context);
 
             self.information.iter_mut().for_each(|info| {
@@ -153,7 +153,6 @@ impl StatusBar {
 
             let mut img = Vec::new();
             surface.write_to_png(&mut img)?;
-
             let img = RgbaImage::from(image::load_from_memory(&img)?);
 
             canvas.copy_from_slice(&img);
@@ -280,8 +279,6 @@ impl ShmHandler for StatusBar {
 }
 
 fn main() {
-    let mut first_run = true;
-
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -304,6 +301,8 @@ fn main() {
     thread::spawn(move || {
         let _ = listener.start_listener();
     });
+
+    let mut first_run = true;
 
     loop {
         event_queue
