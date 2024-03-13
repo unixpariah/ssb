@@ -54,6 +54,7 @@ struct OutputDetails {
     output_id: u32,
     layer_surface: LayerSurface,
     output: wl_output::WlOutput,
+    first_configure: bool,
 }
 
 pub struct StatusData {
@@ -124,7 +125,7 @@ impl StatusBar {
     }
 
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        self.outputs.iter().try_for_each(|output| {
+        self.outputs.iter_mut().try_for_each(|output| {
             let (width, _) = self
                 .output_state
                 .info(&output.output)
@@ -158,11 +159,14 @@ impl StatusBar {
 
             canvas.copy_from_slice(&img);
 
-            let layer = &output.layer_surface;
-            layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
-            layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-            layer.commit();
-
+            if !output.first_configure {
+                let layer = &output.layer_surface;
+                layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
+                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+                layer.wl_surface().commit();
+            } else {
+                output.first_configure = false;
+            }
             Ok::<(), Box<dyn Error>>(())
         })
     }
@@ -190,15 +194,16 @@ impl OutputHandler for StatusBar {
 
         if let Some(info) = self.output_state.info(&output) {
             if let Some((width, _)) = info.logical_size {
-                layer.set_size(width as u32, HEIGHT as u32);
                 layer.set_anchor(PLACEMENT);
                 layer.set_exclusive_zone(HEIGHT);
+                layer.set_size(width as u32, HEIGHT as u32);
                 layer.commit();
 
                 self.outputs.push(OutputDetails {
                     output_id: info.id,
                     layer_surface: layer,
                     output,
+                    first_configure: true,
                 });
             }
         }
@@ -309,18 +314,15 @@ fn main() {
     }
 
     thread::spawn(move || {
-        let _ = listener.start_listener();
+        listener.start_listener().expect("Failed to start listener");
     });
 
-    event_queue
-        .blocking_dispatch(&mut status_bar)
-        .expect("Failed to dispatch events");
     loop {
         event_queue
-            .roundtrip(&mut status_bar)
-            .expect("Failed to roundtrip");
+            .blocking_dispatch(&mut status_bar)
+            .expect("Failed to dispatch events");
 
-        let _ = status_bar.draw();
+        status_bar.draw().expect("Failed to draw status bar");
 
         loop {
             let break_loop = status_bar

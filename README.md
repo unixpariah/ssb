@@ -34,3 +34,6 @@ ssb
 
 The configuration file is located in ./ssb/src/config.rs. Ssb is supposed to be simple and minimalistic so configuration is done by editing the source code.
 After editing the configuration file, you need to rebuild the project and reinstall the binary.
+
+## TODO
+[ ] Fix crash when connecting new output
