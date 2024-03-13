@@ -1,10 +1,37 @@
 use crate::{
-    config::{BACKGROUND, FONT, UNKOWN},
-    BacklightOpts, Cmd, Events, RamOpts, StatusData,
+    config::{BACKGROUND, FONT},
+    Cmd,
 };
 use cairo::Context;
-use hyprland::shared::{HyprData, HyprDataActive};
-use std::{error::Error, fs, process::Command, time::Instant};
+use hyprland::{
+    event_listener::EventListener,
+    shared::{HyprData, HyprDataActive},
+};
+use std::{
+    cell::RefCell, error::Error, fs, process::Command, rc::Rc, sync::mpsc::Receiver, thread,
+    time::Duration,
+};
+
+#[derive(Copy, Clone)]
+pub enum Trigger {
+    WorkspaceChanged,
+    TimePassed(u64),
+    FileChange(&'static str),
+}
+
+#[derive(Copy, Clone)]
+pub enum BacklightOpts {
+    Perc,
+    Value,
+}
+
+#[derive(Copy, Clone)]
+pub enum RamOpts {
+    Used,
+    Free,
+    PercUsed,
+    PercFree,
+}
 
 pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> {
     Ok(String::from_utf8(
@@ -23,13 +50,19 @@ pub fn get_ram(opt: RamOpts) -> Result<String, Box<dyn Error>> {
     let total = output[7].parse::<f64>()?;
     let used = output[8].parse::<f64>()?;
 
-    Ok(match opt {
+    let output = match opt {
         RamOpts::PercUsed => (used / total) * 100.0,
         RamOpts::PercFree => ((total - used) / total) * 100.0,
         RamOpts::Used => used,
         RamOpts::Free => total - used,
     }
-    .to_string())
+    .to_string()
+    .split('.')
+    .next()
+    .ok_or("")?
+    .into();
+
+    Ok(output)
 }
 
 pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
@@ -52,7 +85,14 @@ pub fn get_cpu() -> Result<String, Box<dyn Error>> {
     let output = output.split_whitespace().collect::<Vec<&str>>();
     let idle = output.last().ok_or("not found")?.parse::<f64>()?;
 
-    Ok((100.0 - idle).to_string())
+    let output = (100.0 - idle)
+        .to_string()
+        .split('.')
+        .next()
+        .ok_or("")?
+        .into();
+
+    Ok(output)
 }
 
 pub fn get_current_workspace(
@@ -70,24 +110,6 @@ pub fn get_current_workspace(
             format!("{} ", inactive)
         })
         .collect::<String>())
-}
-
-pub fn update_workspace_changed(info: &mut StatusData, events: &Events) {
-    if let Ok(event) = events.active_window_change.1.try_recv() {
-        if event {
-            info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
-            if let Ok(tx) = events.active_window_change.0.try_borrow() {
-                let _ = tx.send(false);
-            }
-        }
-    }
-}
-
-pub fn update_time_passed(info: &mut StatusData, interval: u128) {
-    if info.timestamp.elapsed().as_millis() >= interval {
-        info.output = get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
-        info.timestamp = Instant::now();
-    }
 }
 
 pub fn set_context_properties(context: &Context) {
@@ -119,8 +141,68 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
     Ok(match command {
         Cmd::Custom(command, args) => new_command(command, args)?,
         Cmd::Workspaces(active, inactive) => get_current_workspace(active, inactive)?,
-        Cmd::Ram(opt) => get_ram(*opt)?.split('.').next().ok_or("")?.into(),
+        Cmd::Ram(opt) => get_ram(*opt)?,
         Cmd::Backlight(opt) => get_backlight(*opt)?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu => get_cpu()?.split('.').next().ok_or("")?.into(),
     })
+}
+
+pub fn create_workspace_listener() -> Receiver<bool> {
+    let mut listener = EventListener::new();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx = Rc::new(RefCell::new(tx));
+
+    {
+        let tx = Rc::clone(&tx);
+        listener.add_workspace_destroy_handler(move |_| {
+            let _ = tx.borrow().send(true);
+        });
+    }
+
+    {
+        let tx = Rc::clone(&tx);
+        listener.add_workspace_change_handler(move |_| {
+            let _ = tx.borrow().send(true);
+        });
+    }
+
+    {
+        let tx = Rc::clone(&tx);
+        listener.add_active_monitor_change_handler(move |_| {
+            let _ = tx.borrow().send(true);
+        });
+    }
+
+    thread::spawn(move || {
+        listener.start_listener().expect("Failed to start listener");
+    });
+
+    rx
+}
+
+pub fn create_time_passed_listener(interval: u64) -> Receiver<bool> {
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    thread::spawn(move || loop {
+        thread::sleep(std::time::Duration::from_millis(interval));
+        let _ = tx.send(true);
+    });
+
+    rx
+}
+
+pub fn create_file_change_listener(path: &'static str) -> Receiver<bool> {
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    let mut hotwatch = hotwatch::Hotwatch::new_with_custom_delay(Duration::ZERO)
+        .expect("Failed to create hotwatch");
+    hotwatch
+        .watch(path, move |event: hotwatch::Event| {
+            if let hotwatch::EventKind::Modify(_) = event.kind {
+                let _ = tx.send(true);
+            }
+        })
+        .unwrap();
+
+    rx
 }

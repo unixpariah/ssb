@@ -1,4 +1,7 @@
-use crate::{Cmd, Font};
+use crate::{
+    util::{BacklightOpts, RamOpts, Trigger},
+    Cmd,
+};
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
 
 /*               _                        __ _                       _   _
@@ -15,10 +18,12 @@ pub const UNKOWN: &str = "N/A";
 // Background color              R   G   B   A
 pub const BACKGROUND: [u8; 4] = [20, 15, 33, 255];
 
-// Placement of status bar
-// Options:
-// - Anchor::TOP
-// - Anchor::BOTTOM
+/*
+ * Placement of status bar
+ * Options:
+ * - Anchor::TOP
+ * - Anchor::BOTTOM
+ */
 pub const PLACEMENT: Anchor = Anchor::TOP;
 pub const HEIGHT: i32 = 40; // Height of status bar in pixels
 pub const FONT: Font = Font {
@@ -67,6 +72,8 @@ pub const FONT: Font = Font {
  *
  */
 
+const PATH: &'static str = "/sys/class/backlight/intel_backlight/brightness";
+
 // The number of command entries in the COMMAND_CONFIGS array. We use a static array for more efficient access.
 const COMMAND_NUM: usize = 7;
 
@@ -77,27 +84,14 @@ pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, Trigger); COMMAND_NUM] = [
     (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Trigger::TimePassed(60000)  ),
     (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Trigger::TimePassed(60000)  ),
     (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Trigger::WorkspaceChanged   ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::TimePassed(100)    ),
+    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::FileChange(PATH)   ),
     (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Trigger::TimePassed(5000)   ),
     (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Trigger::TimePassed(5000)   ),
 ];
 
-#[derive(Copy, Clone)]
-pub enum Trigger {
-    WorkspaceChanged,
-    TimePassed(usize),
-}
-
-#[derive(Copy, Clone)]
-pub enum BacklightOpts {
-    Perc,
-    Value,
-}
-
-#[derive(Copy, Clone)]
-pub enum RamOpts {
-    Used,
-    Free,
-    PercUsed,
-    PercFree,
+pub struct Font {
+    pub family: &'static str,
+    pub size: f64,
+    pub bold: bool,
+    pub color: [u8; 3],
 }

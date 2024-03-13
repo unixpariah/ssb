@@ -2,8 +2,7 @@ mod config;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{BacklightOpts, RamOpts, Trigger, COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
-use hyprland::event_listener::EventListener;
+use config::{COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
 use image::RgbaImage;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -17,16 +16,10 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{
-    cell::RefCell,
-    error::Error,
-    rc::Rc,
-    sync::mpsc::{Receiver, Sender},
-    thread,
-    time::{Duration, Instant},
-};
+use std::{error::Error, sync::mpsc::Receiver, thread, time::Duration};
 use util::{
-    get_command_output, set_context_properties, update_time_passed, update_workspace_changed,
+    create_file_change_listener, create_time_passed_listener, create_workspace_listener,
+    get_command_output, set_context_properties, BacklightOpts, RamOpts, Trigger,
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
@@ -43,18 +36,10 @@ pub enum Cmd {
     Cpu,
 }
 
-pub struct Font {
-    family: &'static str,
-    size: f64,
-    bold: bool,
-    color: [u8; 3],
-}
-
 struct OutputDetails {
     output_id: u32,
     layer_surface: LayerSurface,
     output: wl_output::WlOutput,
-    first_configure: bool,
 }
 
 pub struct StatusData {
@@ -63,12 +48,7 @@ pub struct StatusData {
     x: f64,
     y: f64,
     format: &'static str,
-    event: Trigger,
-    timestamp: Instant,
-}
-
-pub struct Events {
-    active_window_change: (Rc<RefCell<Sender<bool>>>, Receiver<bool>),
+    redraw: Receiver<bool>,
 }
 
 struct StatusBar {
@@ -79,15 +59,10 @@ struct StatusBar {
     layer_shell: LayerShell,
     compositor_state: CompositorState,
     information: Vec<StatusData>,
-    events: Events,
 }
 
 impl StatusBar {
-    fn new(
-        globals: &GlobalList,
-        qh: &wayland_client::QueueHandle<Self>,
-        channel: (Rc<RefCell<Sender<bool>>>, Receiver<bool>),
-    ) -> Self {
+    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect(
@@ -97,20 +72,23 @@ impl StatusBar {
 
         let information = COMMAND_CONFIGS
             .iter()
-            .map(|(command, x, y, format, event)| StatusData {
-                output: get_command_output(command).unwrap_or(UNKOWN.to_string()),
-                command: *command,
-                x: *x,
-                y: *y,
-                format,
-                event: *event,
-                timestamp: Instant::now(),
+            .map(|(command, x, y, format, event)| {
+                let redraw = match event {
+                    Trigger::WorkspaceChanged => create_workspace_listener(),
+                    Trigger::TimePassed(interval) => create_time_passed_listener(*interval),
+                    Trigger::FileChange(path) => create_file_change_listener(path),
+                };
+
+                StatusData {
+                    output: get_command_output(command).unwrap_or(UNKOWN.to_string()),
+                    command: *command,
+                    x: *x,
+                    y: *y,
+                    format,
+                    redraw,
+                }
             })
             .collect();
-
-        let events = Events {
-            active_window_change: channel,
-        };
 
         Self {
             compositor_state,
@@ -120,7 +98,6 @@ impl StatusBar {
             shm,
             outputs: Vec::new(),
             information,
-            events,
         }
     }
 
@@ -141,32 +118,27 @@ impl StatusBar {
             let context = Context::new(&surface)?;
             set_context_properties(&context);
 
-            self.information.iter_mut().for_each(|info| {
-                match info.event {
-                    Trigger::TimePassed(interval) => update_time_passed(info, interval as u128),
-                    Trigger::WorkspaceChanged => update_workspace_changed(info, &self.events),
-                };
+            self.information.iter_mut().try_for_each(|info| {
+                if info.redraw.try_recv() == Ok(true) {
+                    get_command_output(&info.command).map(|output| info.output = output)?;
+                }
 
                 let format = info.format.replace("s%", &info.output);
                 context.move_to(info.x, info.y);
                 let _ = context.show_text(&format);
-            });
+                Ok::<(), Box<dyn Error>>(())
+            })?;
 
             let mut img = Vec::new();
             surface.write_to_png(&mut img)?;
-
             let img = RgbaImage::from(image::load_from_memory(&img)?);
 
             canvas.copy_from_slice(&img);
 
-            if !output.first_configure {
-                let layer = &output.layer_surface;
-                layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
-                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-                layer.wl_surface().commit();
-            } else {
-                output.first_configure = false;
-            }
+            let layer = &output.layer_surface;
+            layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
+            layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+            layer.wl_surface().commit();
             Ok::<(), Box<dyn Error>>(())
         })
     }
@@ -203,7 +175,6 @@ impl OutputHandler for StatusBar {
                     output_id: info.id,
                     layer_surface: layer,
                     output,
-                    first_configure: true,
                 });
             }
         }
@@ -289,34 +260,11 @@ fn main() {
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
 
-    let (tx, rx) = std::sync::mpsc::channel();
-    let tx = Rc::new(RefCell::new(tx));
+    let mut status_bar = StatusBar::new(&globals, &qh);
 
-    let mut status_bar = StatusBar::new(&globals, &qh, (Rc::clone(&tx), rx));
-    let mut listener = EventListener::new();
-
-    {
-        let tx = Rc::clone(&tx);
-        listener.add_workspace_change_handler(move |_| {
-            if let Ok(tx) = tx.try_borrow() {
-                let _ = tx.send(true);
-            }
-        });
-    }
-
-    {
-        let tx = Rc::clone(&tx);
-        listener.add_active_monitor_change_handler(move |_| {
-            if let Ok(tx) = tx.try_borrow() {
-                let _ = tx.send(true);
-            }
-        });
-    }
-
-    thread::spawn(move || {
-        listener.start_listener().expect("Failed to start listener");
-    });
-
+    event_queue
+        .blocking_dispatch(&mut status_bar)
+        .expect("Failed to dispatch events");
     loop {
         event_queue
             .blocking_dispatch(&mut status_bar)
@@ -324,38 +272,7 @@ fn main() {
 
         status_bar.draw().expect("Failed to draw status bar");
 
-        loop {
-            let break_loop = status_bar
-                .information
-                .iter_mut()
-                .any(|info| match info.event {
-                    Trigger::TimePassed(interval) => {
-                        if info.timestamp.elapsed().as_millis() >= interval as u128 {
-                            return true;
-                        }
-                        false
-                    }
-                    Trigger::WorkspaceChanged => {
-                        if let Ok(event) = status_bar.events.active_window_change.1.try_recv() {
-                            let _ = status_bar
-                                .events
-                                .active_window_change
-                                .0
-                                .borrow()
-                                .send(event);
-
-                            return event;
-                        }
-                        false
-                    }
-                });
-
-            if break_loop {
-                break;
-            }
-
-            thread::sleep(Duration::from_millis(1));
-        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
