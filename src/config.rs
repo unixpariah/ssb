@@ -1,5 +1,5 @@
 use crate::{
-    util::{BacklightOpts, RamOpts, Trigger},
+    util::{BacklightOpts, BatteryOpts, RamOpts, Trigger},
     Cmd,
 };
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
@@ -55,6 +55,8 @@ pub const FONT: Font = Font {
  *                                                                               This could be the percentage of CPU used, the actual CPU speed,
  *                                                                               or any other relevant information.
  *
+ *  Cmd::Battery      This function provides information about the battery.      It takes one argument: an enum representing the type of data to display   (BatteryOpts::Capacity)
+ *
  *
  *  The COMMAND_CONFIGS array is a static array of tuples. Each tuple represents a command to be executed, along with its associated properties.
  *
@@ -72,7 +74,8 @@ pub const FONT: Font = Font {
  *
  */
 
-const PATH: &str = "/sys/class/backlight/intel_backlight/brightness";
+const BACKLIGHT_PATH: &str = "/sys/class/backlight/intel_backlight/brightness";
+const BATTERY_PATH: &str = "/sys/class/power_supply/BAT0/capacity";
 
 // The number of command entries in the COMMAND_CONFIGS array. We use a static array for more efficient access.
 const COMMAND_NUM: usize = 7;
@@ -84,9 +87,10 @@ pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, Trigger); COMMAND_NUM] = [
     (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Trigger::TimePassed(60000)  ),
     (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Trigger::TimePassed(60000)  ),
     (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Trigger::WorkspaceChanged   ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::FileChange(PATH)   ),
+    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::FileChange(BACKLIGHT_PATH)   ),
     (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Trigger::TimePassed(5000)   ),
     (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Trigger::TimePassed(5000)   ),
+    //(Cmd::Battery(BatteryOpts::Capacity),     1390.0,  25.0,  " s%%",  Trigger::FileChange(BATTERY_PATH)  ),
 ];
 
 pub struct Font {

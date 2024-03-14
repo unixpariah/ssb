@@ -19,7 +19,7 @@ use smithay_client_toolkit::{
 use std::{error::Error, sync::mpsc::Receiver, thread, time::Duration};
 use util::{
     create_file_change_listener, create_time_passed_listener, create_workspace_listener,
-    get_command_output, set_context_properties, BacklightOpts, RamOpts, Trigger,
+    get_command_output, set_context_properties, BacklightOpts, BatteryOpts, RamOpts, Trigger,
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
@@ -34,6 +34,7 @@ pub enum Cmd {
     Backlight(BacklightOpts),
     Ram(RamOpts),
     Cpu,
+    Battery(BatteryOpts),
 }
 
 struct OutputDetails {

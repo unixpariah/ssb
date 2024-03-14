@@ -32,6 +32,12 @@ pub enum BacklightOpts {
 }
 
 #[derive(Copy, Clone)]
+pub enum BatteryOpts {
+    Capacity,
+    Status,
+}
+
+#[derive(Copy, Clone)]
 pub enum RamOpts {
     Used,
     Free,
@@ -73,14 +79,51 @@ pub fn get_ram(opt: RamOpts) -> Result<String, Box<dyn Error>> {
     Ok(output)
 }
 
-pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
-    let brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/actual_brightness")?
-        .trim()
-        .parse::<f64>()?;
+pub fn get_battery(opts: BatteryOpts) -> Result<String, Box<dyn Error>> {
+    let mut dirs = fs::read_dir("/sys/class/power_supply")?;
+    let path = dirs
+        .find(|entry| {
+            let entry = entry.as_ref().unwrap().path();
+            if entry.join("capacity").exists() && entry.join("status").exists() {
+                return true;
+            }
 
-    let max_brightness = fs::read_to_string("/sys/class/backlight/intel_backlight/max_brightness")?
+            false
+        })
+        .ok_or("")??;
+
+    let capacity = fs::read_to_string(path.path().join("capacity"))?
         .trim()
-        .parse::<f64>()?;
+        .to_string();
+    let status = fs::read_to_string(path.path().join("status"))?
+        .trim()
+        .to_string();
+
+    match opts {
+        BatteryOpts::Capacity => Ok(capacity),
+        BatteryOpts::Status => Ok(status),
+    }
+}
+
+pub fn get_backlight(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
+    let mut dirs = fs::read_dir("/sys/class/backlight")?;
+    let path = dirs
+        .find(|entry| {
+            let entry = entry.as_ref().unwrap().path();
+            if entry.join("brightness").exists() && entry.join("max_brightness").exists() {
+                return true;
+            }
+
+            false
+        })
+        .ok_or("")??;
+
+    let brightness = fs::read_to_string(path.path().join("brightness"))?
+        .trim()
+        .parse::<f32>()?;
+    let max_brightness = fs::read_to_string(path.path().join("max_brightness"))?
+        .trim()
+        .parse::<f32>()?;
 
     match opts {
         BacklightOpts::Perc => Ok(((brightness / max_brightness) * 100.0).to_string()),
@@ -152,6 +195,7 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
         Cmd::Ram(opt) => get_ram(*opt)?,
         Cmd::Backlight(opt) => get_backlight(*opt)?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu => get_cpu()?.split('.').next().ok_or("")?.into(),
+        Cmd::Battery(opt) => get_battery(*opt)?,
     })
 }
 
