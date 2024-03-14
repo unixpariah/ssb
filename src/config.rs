@@ -1,5 +1,6 @@
 use crate::{
-    util::{BacklightOpts, BatteryOpts, RamOpts, Trigger},
+    modules::{backlight::BacklightOpts, memory::RamOpts},
+    util::listeners::Trigger,
     Cmd,
 };
 use smithay_client_toolkit::shell::wlr_layer::Anchor;
@@ -75,7 +76,7 @@ pub const FONT: Font = Font {
  */
 
 const BACKLIGHT_PATH: &str = "/sys/class/backlight/intel_backlight/brightness";
-const BATTERY_PATH: &str = "/sys/class/power_supply/BAT0/capacity";
+//const BATTERY_PATH: &str = "/sys/class/power_supply/BAT0/capacity";
 
 // The number of command entries in the COMMAND_CONFIGS array. We use a static array for more efficient access.
 const COMMAND_NUM: usize = 7;
@@ -83,14 +84,14 @@ const COMMAND_NUM: usize = 7;
 #[rustfmt::skip]
 pub const COMMAND_CONFIGS: [(Cmd, f64, f64, &str, Trigger); COMMAND_NUM] = [
     // Command                                x        y      format    Trigger
-    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  Trigger::TimePassed(100)    ),
-    (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Trigger::TimePassed(60000)  ),
-    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Trigger::TimePassed(60000)  ),
-    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Trigger::WorkspaceChanged   ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::FileChange(BACKLIGHT_PATH)   ),
-    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Trigger::TimePassed(5000)   ),
-    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Trigger::TimePassed(5000)   ),
-    //(Cmd::Battery(BatteryOpts::Capacity),     1390.0,  25.0,  " s%%",  Trigger::FileChange(BATTERY_PATH)  ),
+    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  Trigger::TimePassed(10000)             ),
+    (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Trigger::TimePassed(60000)           ),
+    (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Trigger::TimePassed(60000)           ),
+    (Cmd::Workspaces(" ", " "),             35.0,    25.0,  "s%",     Trigger::WorkspaceChanged            ),
+    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  25.0,  "󰖨 s%%",  Trigger::FileChange(BACKLIGHT_PATH)  ),
+    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  25.0,  "󰍛 s%%",  Trigger::TimePassed(5000)            ),
+    (Cmd::Cpu,                                1700.0,  25.0,  " s%%",  Trigger::TimePassed(5000)            ),
+    //(Cmd::Battery(BatteryOpts::Capacity),     1390.0,  25.0,  " s%%",  Trigger::FileChange(BATTERY_PATH)    ),
 ];
 
 pub struct Font {

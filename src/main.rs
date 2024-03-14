@@ -1,9 +1,13 @@
 mod config;
+mod modules;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
 use config::{COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
 use image::RgbaImage;
+use modules::{
+    backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
+};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -18,8 +22,11 @@ use smithay_client_toolkit::{
 };
 use std::{error::Error, sync::mpsc::Receiver, thread, time::Duration};
 use util::{
-    create_file_change_listener, create_time_passed_listener, create_workspace_listener,
-    get_command_output, set_context_properties, BacklightOpts, BatteryOpts, RamOpts, Trigger,
+    helpers::set_context_properties,
+    listeners::{
+        create_file_change_listener, create_time_passed_listener, create_workspace_listener,
+        Trigger,
+    },
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
@@ -27,7 +34,7 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Cmd {
     Custom(&'static str, &'static str),
     Workspaces(&'static str, &'static str),
@@ -260,6 +267,8 @@ impl ShmHandler for StatusBar {
 }
 
 fn main() {
+    let mut first_run = true;
+
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -269,18 +278,27 @@ fn main() {
     event_queue
         .blocking_dispatch(&mut status_bar)
         .expect("Failed to dispatch events");
+
+    event_queue
+        .blocking_dispatch(&mut status_bar)
+        .expect("Failed to dispatch events");
     loop {
+        status_bar.draw().expect("Failed to draw status bar");
+
         event_queue
             .blocking_dispatch(&mut status_bar)
             .expect("Failed to dispatch events");
 
-        status_bar.draw().expect("Failed to draw status bar");
-
         loop {
+            if first_run {
+                first_run = false;
+                break;
+            }
+
             let break_loop = status_bar.information.iter_mut().any(|info| {
-                if let Ok(rx) = info.receiver.try_recv() {
-                    info.redraw = rx;
-                    return rx;
+                if let Ok(recv) = info.receiver.try_recv() {
+                    info.redraw = recv;
+                    return recv;
                 }
 
                 false
