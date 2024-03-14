@@ -1,53 +1,17 @@
 use hyprland::event_listener::EventListener;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{mpsc::Receiver, Arc, Mutex},
-    thread,
-};
+use std::{cell::RefCell, rc::Rc, sync::Mutex, thread};
+use tokio::sync::broadcast;
 
 #[derive(Copy, Clone, Debug)]
+#[allow(dead_code)]
 pub enum Trigger {
     WorkspaceChanged,
     TimePassed(u64),
     FileChange(&'static str),
 }
 
-pub fn create_workspace_listener() -> Receiver<bool> {
-    let mut listener = EventListener::new();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let tx = Rc::new(RefCell::new(tx));
-
-    {
-        let tx = Rc::clone(&tx);
-        listener.add_workspace_destroy_handler(move |_| {
-            let _ = tx.borrow().send(true);
-        });
-    }
-
-    {
-        let tx = Rc::clone(&tx);
-        listener.add_workspace_change_handler(move |_| {
-            let _ = tx.borrow().send(true);
-        });
-    }
-
-    {
-        let tx = Rc::clone(&tx);
-        listener.add_active_monitor_change_handler(move |_| {
-            let _ = tx.borrow().send(true);
-        });
-    }
-
-    thread::spawn(move || {
-        listener.start_listener().expect("Failed to start listener");
-    });
-
-    rx
-}
-
 pub struct Listeners {
-    pub workspace_listener: Option<Arc<Mutex<Receiver<bool>>>>,
+    pub workspace_listener: Option<Rc<RefCell<broadcast::Sender<bool>>>>,
 }
 
 impl Listeners {
@@ -57,15 +21,15 @@ impl Listeners {
         }
     }
 
-    pub fn new_workspace_listener(&mut self) -> Arc<Mutex<Receiver<bool>>> {
+    pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {
         if let Some(workspace_listener) = &self.workspace_listener {
-            return Arc::clone(&workspace_listener);
+            return workspace_listener.borrow().subscribe();
         }
 
         let mut listener = EventListener::new();
-        let (tx, rx) = std::sync::mpsc::channel();
+
+        let (tx, rx) = broadcast::channel(1);
         let tx = Rc::new(RefCell::new(tx));
-        let rx = Arc::new(Mutex::new(rx));
 
         {
             let tx = Rc::clone(&tx);
@@ -92,14 +56,13 @@ impl Listeners {
             listener.start_listener().expect("Failed to start listener");
         });
 
-        self.workspace_listener = Some(Arc::clone(&rx));
-
+        self.workspace_listener = Some(tx);
         rx
     }
 }
 
-pub fn create_time_passed_listener(interval: u64) -> Receiver<bool> {
-    let (tx, rx) = std::sync::mpsc::channel();
+pub fn create_time_passed_listener(interval: u64) -> broadcast::Receiver<bool> {
+    let (tx, rx) = broadcast::channel(1);
 
     thread::spawn(move || loop {
         thread::sleep(std::time::Duration::from_millis(interval));
@@ -111,12 +74,12 @@ pub fn create_time_passed_listener(interval: u64) -> Receiver<bool> {
 
 static mut HOTWATCH: Mutex<Option<hotwatch::Hotwatch>> = Mutex::new(None);
 
-pub fn create_file_change_listener(path: &'static str) -> Receiver<bool> {
-    let (tx, rx) = std::sync::mpsc::channel();
+pub fn create_file_change_listener(path: &'static str) -> broadcast::Receiver<bool> {
+    let (tx, rx) = broadcast::channel(1);
 
     unsafe {
         let mut hotwatch =
-            hotwatch::Hotwatch::new_with_custom_delay(std::time::Duration::from_millis(50))
+            hotwatch::Hotwatch::new_with_custom_delay(std::time::Duration::from_millis(10))
                 .expect("Failed to create hotwatch");
 
         hotwatch

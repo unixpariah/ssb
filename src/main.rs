@@ -20,13 +20,11 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, sync::mpsc::Receiver, thread, time::Duration};
+use std::{error::Error, thread, time::Duration};
+use tokio::sync::broadcast;
 use util::{
     helpers::set_context_properties,
-    listeners::{
-        create_file_change_listener, create_time_passed_listener, create_workspace_listener,
-        Trigger,
-    },
+    listeners::{create_file_change_listener, create_time_passed_listener, Listeners, Trigger},
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
@@ -56,7 +54,7 @@ pub struct StatusData {
     x: f64,
     y: f64,
     format: &'static str,
-    receiver: Receiver<bool>,
+    receiver: broadcast::Receiver<bool>,
     redraw: bool,
 }
 
@@ -79,11 +77,13 @@ impl StatusBar {
         );
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
+        let mut listeners = Listeners::new();
+
         let information = COMMAND_CONFIGS
             .iter()
             .map(|(command, x, y, format, event)| {
                 let receiver = match event {
-                    Trigger::WorkspaceChanged => create_workspace_listener(),
+                    Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                     Trigger::TimePassed(interval) => create_time_passed_listener(*interval),
                     Trigger::FileChange(path) => create_file_change_listener(path),
                 };
@@ -295,13 +295,14 @@ fn main() {
                 break;
             }
 
-            let break_loop = status_bar.information.iter_mut().any(|info| {
+            let mut break_loop = false;
+            status_bar.information.iter_mut().for_each(|info| {
                 if let Ok(recv) = info.receiver.try_recv() {
-                    info.redraw = recv;
-                    return recv;
+                    if recv {
+                        break_loop = true;
+                        info.redraw = true;
+                    }
                 }
-
-                false
             });
 
             if break_loop {
