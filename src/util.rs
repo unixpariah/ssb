@@ -8,7 +8,13 @@ use hyprland::{
     shared::{HyprData, HyprDataActive},
 };
 use std::{
-    cell::RefCell, error::Error, fs, process::Command, rc::Rc, sync::mpsc::Receiver, thread,
+    cell::RefCell,
+    error::Error,
+    fs,
+    process::Command,
+    rc::Rc,
+    sync::{mpsc::Receiver, Mutex},
+    thread,
     time::Duration,
 };
 
@@ -34,14 +40,16 @@ pub enum RamOpts {
 }
 
 pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> {
-    Ok(String::from_utf8(
+    let o = String::from_utf8(
         Command::new(command)
             .args(args.split_whitespace())
             .output()?
             .stdout,
     )?
     .trim()
-    .to_string())
+    .to_string();
+
+    Ok(o)
 }
 
 pub fn get_ram(opt: RamOpts) -> Result<String, Box<dyn Error>> {
@@ -191,19 +199,27 @@ pub fn create_time_passed_listener(interval: u64) -> Receiver<bool> {
     rx
 }
 
+static mut HOTWATCH: Mutex<Option<hotwatch::Hotwatch>> = Mutex::new(None);
+
 pub fn create_file_change_listener(path: &'static str) -> Receiver<bool> {
     let (tx, rx) = std::sync::mpsc::channel();
 
-    let mut hotwatch = hotwatch::Hotwatch::new_with_custom_delay(Duration::ZERO)
-        .expect("Failed to create hotwatch");
-    hotwatch
-        .watch(path, move |event: hotwatch::Event| {
-            println!("{:?}", event);
-            if let hotwatch::EventKind::Modify(_) = event.kind {
-                let _ = tx.send(true);
-            }
-        })
-        .unwrap();
+    unsafe {
+        let mut hotwatch = hotwatch::Hotwatch::new_with_custom_delay(Duration::from_millis(50))
+            .expect("Failed to create hotwatch");
+
+        hotwatch
+            .watch(path, move |event| {
+                if let hotwatch::EventKind::Modify(_) = event.kind {
+                    let _ = tx.send(true);
+                }
+            })
+            .expect("Failed to watch file");
+
+        if let Ok(mut ht) = HOTWATCH.lock() {
+            *ht = Some(hotwatch);
+        }
+    }
 
     rx
 }

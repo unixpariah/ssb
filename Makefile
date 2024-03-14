@@ -10,7 +10,4 @@ clean:
 uninstall:
 	@rm /usr/bin/ssb
 
-nix:
-	@nix build -f Cargo.nix rootCrate.build
-
-.PHONY: all clean install uninstall nix
+.PHONY: all clean install uninstall

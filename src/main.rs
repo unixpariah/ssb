@@ -16,7 +16,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, sync::mpsc::Receiver};
+use std::{error::Error, sync::mpsc::Receiver, thread, time::Duration};
 use util::{
     create_file_change_listener, create_time_passed_listener, create_workspace_listener,
     get_command_output, set_context_properties, BacklightOpts, RamOpts, Trigger,
@@ -48,7 +48,8 @@ pub struct StatusData {
     x: f64,
     y: f64,
     format: &'static str,
-    redraw: Receiver<bool>,
+    receiver: Receiver<bool>,
+    redraw: bool,
 }
 
 struct StatusBar {
@@ -73,7 +74,7 @@ impl StatusBar {
         let information = COMMAND_CONFIGS
             .iter()
             .map(|(command, x, y, format, event)| {
-                let redraw = match event {
+                let receiver = match event {
                     Trigger::WorkspaceChanged => create_workspace_listener(),
                     Trigger::TimePassed(interval) => create_time_passed_listener(*interval),
                     Trigger::FileChange(path) => create_file_change_listener(path),
@@ -85,7 +86,8 @@ impl StatusBar {
                     x: *x,
                     y: *y,
                     format,
-                    redraw,
+                    receiver,
+                    redraw: true,
                 }
             })
             .collect();
@@ -119,8 +121,9 @@ impl StatusBar {
             set_context_properties(&context);
 
             self.information.iter_mut().try_for_each(|info| {
-                if info.redraw.try_recv() == Ok(true) {
-                    get_command_output(&info.command).map(|output| info.output = output)?;
+                if info.redraw {
+                    info.output = get_command_output(&info.command)?;
+                    info.redraw = false;
                 }
 
                 let format = info.format.replace("s%", &info.output);
@@ -256,8 +259,6 @@ impl ShmHandler for StatusBar {
 }
 
 fn main() {
-    let mut first_run = true;
-
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -275,17 +276,20 @@ fn main() {
         status_bar.draw().expect("Failed to draw status bar");
 
         loop {
-            let break_loop = status_bar.information.iter().any(|info| {
-                if info.redraw.recv() == Ok(true) {
-                    return true;
+            let break_loop = status_bar.information.iter_mut().any(|info| {
+                if let Ok(rx) = info.receiver.try_recv() {
+                    info.redraw = rx;
+                    return rx;
                 }
+
                 false
             });
 
-            if break_loop || first_run {
-                first_run = false;
+            if break_loop {
                 break;
             }
+
+            thread::sleep(Duration::from_millis(1));
         }
     }
 }
