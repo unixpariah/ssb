@@ -72,7 +72,7 @@ pub const FONT: Font = Font {
  *
  */
 
-const PATH: &'static str = "/sys/class/backlight/intel_backlight/brightness";
+const PATH: &str = "/sys/class/backlight/intel_backlight/brightness";
 
 // The number of command entries in the COMMAND_CONFIGS array. We use a static array for more efficient access.
 const COMMAND_NUM: usize = 7;

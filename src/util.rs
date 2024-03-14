@@ -198,6 +198,7 @@ pub fn create_file_change_listener(path: &'static str) -> Receiver<bool> {
         .expect("Failed to create hotwatch");
     hotwatch
         .watch(path, move |event: hotwatch::Event| {
+            println!("{:?}", event);
             if let hotwatch::EventKind::Modify(_) = event.kind {
                 let _ = tx.send(true);
             }

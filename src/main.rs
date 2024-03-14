@@ -16,7 +16,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, sync::mpsc::Receiver, thread, time::Duration};
+use std::{error::Error, sync::mpsc::Receiver};
 use util::{
     create_file_change_listener, create_time_passed_listener, create_workspace_listener,
     get_command_output, set_context_properties, BacklightOpts, RamOpts, Trigger,
@@ -256,6 +256,8 @@ impl ShmHandler for StatusBar {
 }
 
 fn main() {
+    let mut first_run = true;
+
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -272,7 +274,19 @@ fn main() {
 
         status_bar.draw().expect("Failed to draw status bar");
 
-        thread::sleep(Duration::from_millis(10));
+        loop {
+            let break_loop = status_bar.information.iter().any(|info| {
+                if info.redraw.recv() == Ok(true) {
+                    return true;
+                }
+                false
+            });
+
+            if break_loop || first_run {
+                first_run = false;
+                break;
+            }
+        }
     }
 }
 
