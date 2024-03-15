@@ -3,7 +3,7 @@ mod modules;
 mod util;
 
 use cairo::{Context, Format, ImageSurface};
-use config::{COMMAND_CONFIGS, HEIGHT, PLACEMENT, UNKOWN};
+use config::{COMMAND_CONFIGS, HEIGHT, TOPBAR, UNKOWN};
 use image::RgbaImage;
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
@@ -15,7 +15,7 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
-        wlr_layer::{Layer, LayerShell, LayerShellHandler, LayerSurface},
+        wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler, LayerSurface},
         WaylandSurface,
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
@@ -24,7 +24,7 @@ use std::{error::Error, thread, time::Duration};
 use tokio::sync::broadcast;
 use util::{
     helpers::set_context_properties,
-    listeners::{create_file_change_listener, create_time_passed_listener, Listeners, Trigger},
+    listeners::{Listeners, Trigger},
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
@@ -66,6 +66,8 @@ struct StatusBar {
     layer_shell: LayerShell,
     compositor_state: CompositorState,
     information: Vec<StatusData>,
+    #[allow(dead_code)]
+    listeners: Listeners,
 }
 
 impl StatusBar {
@@ -84,8 +86,8 @@ impl StatusBar {
             .map(|(command, x, y, format, event)| {
                 let receiver = match event {
                     Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
-                    Trigger::TimePassed(interval) => create_time_passed_listener(*interval),
-                    Trigger::FileChange(path) => create_file_change_listener(path),
+                    Trigger::TimePassed(interval) => listeners.new_time_passed_listener(*interval),
+                    Trigger::FileChange(path) => listeners.new_file_change_listener(path),
                 };
 
                 StatusData {
@@ -100,6 +102,8 @@ impl StatusBar {
             })
             .collect();
 
+        listeners.start_time_passed_listeners();
+
         Self {
             compositor_state,
             layer_shell,
@@ -108,6 +112,7 @@ impl StatusBar {
             shm,
             outputs: Vec::new(),
             information,
+            listeners,
         }
     }
 
@@ -177,7 +182,7 @@ impl OutputHandler for StatusBar {
 
         if let Some(info) = self.output_state.info(&output) {
             if let Some((width, _)) = info.logical_size {
-                layer.set_anchor(PLACEMENT);
+                layer.set_anchor(if TOPBAR { Anchor::TOP } else { Anchor::BOTTOM });
                 layer.set_exclusive_zone(HEIGHT);
                 layer.set_size(width as u32, HEIGHT as u32);
                 layer.commit();
@@ -296,6 +301,7 @@ fn main() {
             }
 
             let mut break_loop = false;
+
             status_bar.information.iter_mut().for_each(|info| {
                 if let Ok(recv) = info.receiver.try_recv() {
                     if recv {
