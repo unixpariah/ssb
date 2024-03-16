@@ -68,13 +68,13 @@ struct StatusBar {
     layer_shell: LayerShell,
     compositor_state: CompositorState,
     information: Vec<StatusData>,
-    draw: broadcast::Receiver<bool>,
+    draw: mpsc::Receiver<bool>,
     #[allow(dead_code)]
     listeners: Listeners,
 }
 
 impl StatusBar {
-    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>, rx: broadcast::Receiver<bool>) -> Self {
+    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>, rx: mpsc::Receiver<bool>) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect(
@@ -284,7 +284,7 @@ impl ShmHandler for StatusBar {
     }
 }
 
-async fn listen(listeners: Vec<(Option<broadcast::Receiver<bool>>, Sender<bool>)>, sender: broadcast::Sender<bool>) {
+async fn listen(listeners: Vec<(Option<broadcast::Receiver<bool>>, Sender<bool>)>, sender: mpsc::Sender<bool>) {
         for mut listener in listeners {
         let sender = sender.clone();
             tokio::spawn(async move {
@@ -304,7 +304,7 @@ async fn main() {
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
 
-    let (tx, rx) = broadcast::channel(1);
+    let (tx, rx) = mpsc::channel();
 
     let mut status_bar = StatusBar::new(&globals, &qh, rx);
     let mut skip = true;
@@ -315,9 +315,7 @@ async fn main() {
         (info.receiver.take(), tx)
     }).collect();
 
-    tokio::spawn( async move {
-        listen(receivers, tx).await;
-    });
+    listen(receivers, tx).await;
 
     loop {
         status_bar.draw().expect("Failed to draw status bar");
@@ -335,10 +333,10 @@ async fn main() {
 
             if skip {
                 skip = false;
-            continue;
+                continue;
             }
 
-        let _ = status_bar.draw.recv().await;
+        let _ = status_bar.draw.recv();
     }
 }
 

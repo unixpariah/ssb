@@ -1,6 +1,6 @@
 # ssb - Simple and hacky status bar
 
-Ssb is a simple status bar for wayland (with plans of adding x11 support) written in rust.
+Ssb is a simple status bar for wayland written in rust.
 
 ## Dependencies
 
@@ -34,3 +34,9 @@ ssb
 
 The configuration file is located in ./ssb/src/config.rs. Ssb is supposed to be simple and minimalistic so configuration is done by editing the source code.
 After editing the configuration file, you need to rebuild the project and reinstall the binary.
+
+## TODO
+- [ ] Somehow do cairo surface caching to lower cpu usage
+- [ ] Somehow add listener to volume change
+- [ ] Fix crashing when new output is added
+- [ ] (Maybe) add x11 support
