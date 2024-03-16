@@ -29,7 +29,7 @@ pub struct Listeners {
 
 impl Listeners {
     pub fn new() -> Self {
-        let file_change_listener = Hotwatch::new_with_custom_delay(Duration::from_millis(50))
+        let file_change_listener = Hotwatch::new_with_custom_delay(Duration::from_millis(100))
             .expect("Failed to create hotwatch");
 
         Self {
@@ -84,9 +84,11 @@ impl Listeners {
             return;
         }
 
+        // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
+        // to the listeners whose interval has passed and resets the interval in a loop
         thread::spawn(move || loop {
             if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
-                time_passed_listener.sort_unstable_by(|a, b| a.interval.cmp(&b.interval));
+                time_passed_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
                 let min_interval = time_passed_listener[0].interval;
                 thread::sleep(std::time::Duration::from_millis(min_interval));
                 for data in time_passed_listener.iter_mut() {
@@ -111,7 +113,7 @@ impl Listeners {
         };
 
         let time_passed_listener = Arc::clone(&self.time_passed_listener);
-        if let Ok(mut time_passed_listener) = time_passed_listener.try_lock() {
+        if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
             time_passed_listener.push(data);
         }
 

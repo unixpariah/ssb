@@ -78,7 +78,7 @@ const BATTERY_PATH: &str = "/sys/class/power_supply/BAT0/capacity";
 #[rustfmt::skip]
 pub const COMMAND_CONFIGS: &[(Cmd, f64, f64, &str, Trigger)] = &[
     // Command                                x        y      format    Trigger
-    (Cmd::Battery(BatteryOpts::Capacity),     1390.0,  25.0,  " s%%",  Trigger::TimePassed(1010)    ),
+    //(Cmd::Battery(BatteryOpts::Capacity),     1390.0,  25.0,  " s%%",  Trigger::TimePassed(1010)    ),
     (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  25.0,  " s%%",  Trigger::TimePassed(1000)           ),
     (Cmd::Custom("date", "+%H:%M"),           925.0,   25.0,  " s%",   Trigger::TimePassed(60000)           ),
     (Cmd::Custom("iwgetid", "-r"),            1775.0,  25.0,  "  s%",  Trigger::TimePassed(60000)           ),

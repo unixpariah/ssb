@@ -20,7 +20,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, thread, time::Duration};
+use std::error::Error;
 use tokio::sync::broadcast;
 use util::{
     helpers::set_context_properties,
@@ -42,10 +42,12 @@ pub enum Cmd {
     Battery(BatteryOpts),
 }
 
-struct OutputDetails {
+#[derive(Debug)]
+struct Surface {
     output_id: u32,
     layer_surface: LayerSurface,
     output: wl_output::WlOutput,
+    configured: bool,
 }
 
 pub struct StatusData {
@@ -54,7 +56,7 @@ pub struct StatusData {
     x: f64,
     y: f64,
     format: &'static str,
-    receiver: broadcast::Receiver<bool>,
+    receiver: Option<broadcast::Receiver<bool>>,
     redraw: bool,
 }
 
@@ -62,16 +64,17 @@ struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
     shm: Shm,
-    outputs: Vec<OutputDetails>,
+    surfaces: Vec<Surface>,
     layer_shell: LayerShell,
     compositor_state: CompositorState,
     information: Vec<StatusData>,
+    draw: broadcast::Receiver<bool>,
     #[allow(dead_code)]
     listeners: Listeners,
 }
 
 impl StatusBar {
-    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>) -> Self {
+    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>, rx: broadcast::Receiver<bool>) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect(
@@ -89,6 +92,8 @@ impl StatusBar {
                     Trigger::TimePassed(interval) => listeners.new_time_passed_listener(*interval),
                     Trigger::FileChange(path) => listeners.new_file_change_listener(path),
                 };
+
+                let receiver = Some(receiver);
 
                 StatusData {
                     output: get_command_output(command).unwrap_or(UNKOWN.to_string()),
@@ -110,14 +115,19 @@ impl StatusBar {
             output_state: OutputState::new(globals, qh),
             registry_state: RegistryState::new(globals),
             shm,
-            outputs: Vec::new(),
+            surfaces: Vec::new(),
             information,
             listeners,
+            draw: rx,
         }
     }
 
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        self.outputs.iter_mut().try_for_each(|output| {
+        self.surfaces.iter_mut().try_for_each(|output| {
+            if !output.configured {
+                return Ok(());
+            }
+
             let (width, _) = self
                 .output_state
                 .info(&output.output)
@@ -134,10 +144,10 @@ impl StatusBar {
             set_context_properties(&context);
 
             self.information.iter_mut().try_for_each(|info| {
-                if info.redraw {
+                //if info.redraw {
                     info.output = get_command_output(&info.command)?;
-                    info.redraw = false;
-                }
+                    //info.redraw = false;
+                //}
 
                 let format = info.format.replace("s%", &info.output);
                 context.move_to(info.x, info.y);
@@ -187,10 +197,11 @@ impl OutputHandler for StatusBar {
                 layer.set_size(width as u32, HEIGHT as u32);
                 layer.commit();
 
-                self.outputs.push(OutputDetails {
+                self.surfaces.push(Surface {
                     output_id: info.id,
                     layer_surface: layer,
                     output,
+                    configured: false,
                 });
             }
         }
@@ -211,7 +222,8 @@ impl OutputHandler for StatusBar {
         output: wl_output::WlOutput,
     ) {
         if let Some(output_info) = self.output_state.info(&output) {
-            self.outputs.retain(|info| info.output_id != output_info.id);
+            self.surfaces
+                .retain(|info| info.output_id != output_info.id);
         }
     }
 }
@@ -271,52 +283,58 @@ impl ShmHandler for StatusBar {
     }
 }
 
-fn main() {
-    let mut first_run = true;
+async fn listen(listeners: Vec<Option<broadcast::Receiver<bool>>>, sender: broadcast::Sender<bool>) {
+        for mut listener in listeners {
+        let sender = sender.clone();
+            tokio::spawn(async move {
+            loop {
+                if let Ok(message) = listener.as_mut().unwrap().recv().await {
+                    let _ = sender.send(message);
+                };
+            }
+        });
+    };
+}
 
+#[tokio::main]
+async fn main() {
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
 
-    let mut status_bar = StatusBar::new(&globals, &qh);
+    let (tx, rx) = broadcast::channel(1);
 
-    event_queue
-        .blocking_dispatch(&mut status_bar)
-        .expect("Failed to dispatch events");
+    let mut status_bar = StatusBar::new(&globals, &qh, rx);
+    let mut skip = true;
 
-    event_queue
-        .blocking_dispatch(&mut status_bar)
-        .expect("Failed to dispatch events");
+    let receivers = status_bar.information.iter_mut().map(|info| {
+        info.receiver.take()
+    }).collect();
+
+    tokio::spawn( async move {
+        listen(receivers, tx).await;
+    });
+
     loop {
         status_bar.draw().expect("Failed to draw status bar");
+
+        status_bar.surfaces.iter_mut().for_each(|surface| {
+            if !surface.configured {
+                surface.configured = true;
+                skip = true;
+            }
+        });
 
         event_queue
             .blocking_dispatch(&mut status_bar)
             .expect("Failed to dispatch events");
 
-        loop {
-            if first_run {
-                first_run = false;
-                break;
+            if skip {
+                skip = false;
+            continue;
             }
 
-            let mut break_loop = false;
-
-            status_bar.information.iter_mut().for_each(|info| {
-                if let Ok(recv) = info.receiver.try_recv() {
-                    if recv {
-                        break_loop = true;
-                        info.redraw = true;
-                    }
-                }
-            });
-
-            if break_loop {
-                break;
-            }
-
-            thread::sleep(Duration::from_millis(1));
-        }
+        let _ = status_bar.draw.recv().await;
     }
 }
 
