@@ -135,45 +135,38 @@ impl StatusBar {
                 return Ok(());
             }
 
+            let unchanged = !self
+                .information
+                .iter_mut()
+                .map(|info| {
+                    if let Some(redraw) = &info.redraw {
+                        if redraw.try_recv().is_ok() || info.output.is_empty() {
+                            let output =
+                                get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
+
+                            if output != info.output {
+                                info.output = output;
+                                return true;
+                            }
+                        };
+                    }
+                    false
+                })
+                .fold(false, |a, b| if b { b } else { a });
+
+            if unchanged {
+                self.dispatch = false;
+                return Ok(());
+            }
+
             let width = surface.width;
-
-            let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 4, &self.shm)?;
-            let (buffer, canvas) =
-                pool.create_buffer(width, HEIGHT, width * 3, wl_shm::Format::Bgr888)?;
-
             if self.cache.get(&width).is_none() {
                 let img_surface = ImageSurface::create(Format::Rgb30, width, HEIGHT)?;
                 let context = Context::new(&img_surface)?;
                 set_context_properties(&context);
 
-                self.cache
-                    .insert(width, (img_surface.clone(), context.clone()));
+                self.cache.insert(width, (img_surface, context));
             }
-
-            let mut unchanged = self.information.len();
-            self.information.iter_mut().for_each(|info| {
-                if let Some(redraw) = &info.redraw {
-                    if redraw.try_recv().is_ok() || info.output.is_empty() {
-                        let output =
-                            get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
-
-                        if output != info.output {
-                            info.output = output;
-                            unchanged -= 1;
-                        }
-                    };
-                }
-            });
-
-            if unchanged == self.information.len() {
-                self.cache = HashMap::new();
-                self.dispatch = false;
-                return Ok(());
-            }
-
-            let img_surface = ImageSurface::create(Format::Rgb30, width, HEIGHT)?;
-            let context = Context::new(&img_surface)?;
-            set_context_properties(&context);
 
             let (img_surface, context) = self.cache.get(&width).unwrap();
 
@@ -185,9 +178,12 @@ impl StatusBar {
             })?;
 
             let mut img = Vec::new();
-
             img_surface.write_to_png(&mut img)?;
             let img = image::load_from_memory(&img)?;
+
+            let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 3, &self.shm)?;
+            let (buffer, canvas) =
+                pool.create_buffer(width, HEIGHT, width * 3, wl_shm::Format::Bgr888)?;
 
             canvas.copy_from_slice(&img.to_rgb8());
 
