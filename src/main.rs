@@ -4,7 +4,6 @@ mod util;
 
 use cairo::{Context, Format, ImageSurface};
 use config::{COMMAND_CONFIGS, HEIGHT, TOPBAR, UNKOWN};
-use image::RgbaImage;
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
 };
@@ -20,7 +19,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{error::Error, sync::mpsc::{self, Receiver, Sender}};
+use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
     helpers::set_context_properties,
@@ -46,7 +45,7 @@ pub enum Cmd {
 struct Surface {
     output_id: u32,
     layer_surface: LayerSurface,
-    output: wl_output::WlOutput,
+    width: i32,
     configured: bool,
 }
 
@@ -57,7 +56,7 @@ pub struct StatusData {
     y: f64,
     format: &'static str,
     receiver: Option<broadcast::Receiver<bool>>,
-    redraw: Option<Receiver<bool>>,
+    redraw: Option<mpsc::Receiver<bool>>,
 }
 
 struct StatusBar {
@@ -69,12 +68,18 @@ struct StatusBar {
     compositor_state: CompositorState,
     information: Vec<StatusData>,
     draw: mpsc::Receiver<bool>,
+    cache: HashMap<i32, (ImageSurface, Context)>,
+    dispatch: bool,
     #[allow(dead_code)]
     listeners: Listeners,
 }
 
 impl StatusBar {
-    fn new(globals: &GlobalList, qh: &wayland_client::QueueHandle<Self>, rx: mpsc::Receiver<bool>) -> Self {
+    fn new(
+        globals: &GlobalList,
+        qh: &wayland_client::QueueHandle<Self>,
+        rx: mpsc::Receiver<bool>,
+    ) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect(
@@ -96,7 +101,7 @@ impl StatusBar {
                 let receiver = Some(receiver);
 
                 StatusData {
-                    output: get_command_output(command).unwrap_or(UNKOWN.to_string()),
+                    output: String::new(),
                     command: *command,
                     x: *x,
                     y: *y,
@@ -119,37 +124,60 @@ impl StatusBar {
             information,
             listeners,
             draw: rx,
+            cache: HashMap::new(),
+            dispatch: true,
         }
     }
 
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        self.surfaces.iter_mut().try_for_each(|output| {
-            if !output.configured {
+        self.surfaces.iter_mut().try_for_each(|surface| {
+            if !surface.configured {
                 return Ok(());
             }
 
-            let (width, _) = self
-                .output_state
-                .info(&output.output)
-                .ok_or("Failed to get output info")?
-                .logical_size
-                .ok_or("Failed to get logical size of output")?;
+            let width = surface.width;
 
             let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 4, &self.shm)?;
             let (buffer, canvas) =
-                pool.create_buffer(width, HEIGHT, width * 4, wl_shm::Format::Argb8888)?;
+                pool.create_buffer(width, HEIGHT, width * 3, wl_shm::Format::Bgr888)?;
 
-            let surface = ImageSurface::create(Format::ARgb32, width, HEIGHT)?;
-            let context = Context::new(&surface)?;
-            set_context_properties(&context);
+            if self.cache.get(&width).is_none() {
+                let img_surface = ImageSurface::create(Format::Rgb30, width, HEIGHT)?;
+                let context = Context::new(&img_surface)?;
+                set_context_properties(&context);
 
-            self.information.iter_mut().try_for_each(|info| {
+                self.cache
+                    .insert(width, (img_surface.clone(), context.clone()));
+            }
+
+            let mut unchanged = self.information.len();
+            self.information.iter_mut().for_each(|info| {
                 if let Some(redraw) = &info.redraw {
-                    if redraw.try_recv().is_ok() {
-                        info.output = get_command_output(&info.command)?;
+                    if redraw.try_recv().is_ok() || info.output.is_empty() {
+                        let output =
+                            get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
+
+                        if output != info.output {
+                            info.output = output;
+                            unchanged -= 1;
+                        }
                     };
                 }
+            });
 
+            if unchanged == self.information.len() {
+                self.cache = HashMap::new();
+                self.dispatch = false;
+                return Ok(());
+            }
+
+            let img_surface = ImageSurface::create(Format::Rgb30, width, HEIGHT)?;
+            let context = Context::new(&img_surface)?;
+            set_context_properties(&context);
+
+            let (img_surface, context) = self.cache.get(&width).unwrap();
+
+            self.information.iter_mut().try_for_each(|info| {
                 let format = info.format.replace("s%", &info.output);
                 context.move_to(info.x, info.y);
                 let _ = context.show_text(&format);
@@ -157,15 +185,20 @@ impl StatusBar {
             })?;
 
             let mut img = Vec::new();
-            surface.write_to_png(&mut img)?;
-            let img = RgbaImage::from(image::load_from_memory(&img)?);
 
-            canvas.copy_from_slice(&img);
+            img_surface.write_to_png(&mut img)?;
+            let img = image::load_from_memory(&img)?;
 
-            let layer = &output.layer_surface;
+            canvas.copy_from_slice(&img.to_rgb8());
+
+            let layer = &surface.layer_surface;
             layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
             layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
             layer.wl_surface().commit();
+
+            self.dispatch = true;
+            self.cache = HashMap::new();
+
             Ok::<(), Box<dyn Error>>(())
         })
     }
@@ -201,7 +234,7 @@ impl OutputHandler for StatusBar {
                 self.surfaces.push(Surface {
                     output_id: info.id,
                     layer_surface: layer,
-                    output,
+                    width,
                     configured: false,
                 });
             }
@@ -211,9 +244,26 @@ impl OutputHandler for StatusBar {
     fn update_output(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _output: wl_output::WlOutput,
+        qh: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
     ) {
+        let id = self.output_state.info(&output).unwrap().id;
+        let layer = self.layer_shell.create_layer_surface(
+            qh,
+            self.compositor_state.create_surface(qh),
+            Layer::Top,
+            Some("ssb"),
+            Some(&output),
+        );
+
+        if let Some(info) = self.surfaces.iter_mut().find(|info| info.output_id == id) {
+            if let Some((width, _)) = self.output_state.info(&output).unwrap().logical_size {
+                info.width = width;
+                info.configured = false;
+                layer.set_size(width as u32, HEIGHT as u32);
+                layer.commit();
+            }
+        }
     }
 
     fn output_destroyed(
@@ -284,18 +334,21 @@ impl ShmHandler for StatusBar {
     }
 }
 
-async fn listen(listeners: Vec<(Option<broadcast::Receiver<bool>>, Sender<bool>)>, sender: mpsc::Sender<bool>) {
-        for mut listener in listeners {
+async fn listen(
+    listeners: Vec<(Option<broadcast::Receiver<bool>>, mpsc::Sender<bool>)>,
+    sender: mpsc::Sender<bool>,
+) {
+    for mut listener in listeners {
         let sender = sender.clone();
-            tokio::spawn(async move {
+        tokio::spawn(async move {
             loop {
                 if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
                     let _ = sender.send(message);
-                    listener.1.send(true).unwrap();
+                    let _ = listener.1.send(true);
                 };
             }
         });
-    };
+    }
 }
 
 #[tokio::main]
@@ -309,11 +362,15 @@ async fn main() {
     let mut status_bar = StatusBar::new(&globals, &qh, rx);
     let mut skip = true;
 
-    let receivers = status_bar.information.iter_mut().map(|info| {
-        let (tx, rx) = mpsc::channel();
-        info.redraw = Some(rx);
-        (info.receiver.take(), tx)
-    }).collect();
+    let receivers = status_bar
+        .information
+        .iter_mut()
+        .map(|info| {
+            let (tx, rx) = mpsc::channel();
+            info.redraw = Some(rx);
+            (info.receiver.take(), tx)
+        })
+        .collect();
 
     listen(receivers, tx).await;
 
@@ -327,14 +384,16 @@ async fn main() {
             }
         });
 
-        event_queue
-            .blocking_dispatch(&mut status_bar)
-            .expect("Failed to dispatch events");
+        if status_bar.dispatch {
+            event_queue
+                .blocking_dispatch(&mut status_bar)
+                .expect("Failed to dispatch events");
+        }
 
-            if skip {
-                skip = false;
-                continue;
-            }
+        if skip {
+            skip = false;
+            continue;
+        }
 
         let _ = status_bar.draw.recv();
     }

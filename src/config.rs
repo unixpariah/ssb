@@ -19,8 +19,8 @@ use smithay_client_toolkit::shell::wlr_layer::Anchor;
 // Value to display when data is not available
 pub const UNKOWN: &str = "N/A";
 
-// Background color              R   G   B   A
-pub const BACKGROUND: [u8; 4] = [20, 15, 33, 255];
+// Background color              R   G   B
+pub const BACKGROUND: [u8; 3] = [20, 15, 33];
 
 pub const TOPBAR: bool = true; // true: status bar at the top, false: status bar at the bottom
 pub const HEIGHT: i32 = 40; // Height of status bar in pixels

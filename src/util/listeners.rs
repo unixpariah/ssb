@@ -23,18 +23,15 @@ pub struct ListenerData {
 
 pub struct Listeners {
     pub workspace_listener: Option<broadcast::Sender<bool>>,
-    pub file_change_listener: Hotwatch,
+    pub file_change_listener: Option<Hotwatch>,
     pub time_passed_listener: Arc<Mutex<Vec<ListenerData>>>,
 }
 
 impl Listeners {
     pub fn new() -> Self {
-        let file_change_listener = Hotwatch::new_with_custom_delay(Duration::from_millis(100))
-            .expect("Failed to create hotwatch");
-
         Self {
             workspace_listener: None,
-            file_change_listener,
+            file_change_listener: None,
             time_passed_listener: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -123,11 +120,18 @@ impl Listeners {
     pub fn new_file_change_listener(&mut self, path: &'static str) -> broadcast::Receiver<bool> {
         let (tx, rx) = broadcast::channel(1);
 
+        if self.file_change_listener.is_none() {
+            let file_change_listener = Hotwatch::new_with_custom_delay(Duration::from_millis(100))
+                .expect("Failed to create hotwatch");
+
+            self.file_change_listener = Some(file_change_listener);
+        }
+
         self.file_change_listener
-            .watch(path, move |event| {
-                if let hotwatch::EventKind::Modify(_) = event.kind {
-                    let _ = tx.send(true);
-                }
+            .as_mut()
+            .unwrap()
+            .watch(path, move |_| {
+                let _ = tx.send(true);
             })
             .expect("Failed to watch file");
 
