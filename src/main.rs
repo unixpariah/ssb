@@ -20,7 +20,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::error::Error;
+use std::{error::Error, sync::mpsc::{self, Receiver, Sender}};
 use tokio::sync::broadcast;
 use util::{
     helpers::set_context_properties,
@@ -57,7 +57,7 @@ pub struct StatusData {
     y: f64,
     format: &'static str,
     receiver: Option<broadcast::Receiver<bool>>,
-    redraw: bool,
+    redraw: Option<Receiver<bool>>,
 }
 
 struct StatusBar {
@@ -102,7 +102,7 @@ impl StatusBar {
                     y: *y,
                     format,
                     receiver,
-                    redraw: true,
+                    redraw: None,
                 }
             })
             .collect();
@@ -144,10 +144,11 @@ impl StatusBar {
             set_context_properties(&context);
 
             self.information.iter_mut().try_for_each(|info| {
-                //if info.redraw {
-                    info.output = get_command_output(&info.command)?;
-                    //info.redraw = false;
-                //}
+                if let Some(redraw) = &info.redraw {
+                    if redraw.try_recv().is_ok() {
+                        info.output = get_command_output(&info.command)?;
+                    };
+                }
 
                 let format = info.format.replace("s%", &info.output);
                 context.move_to(info.x, info.y);
@@ -283,13 +284,14 @@ impl ShmHandler for StatusBar {
     }
 }
 
-async fn listen(listeners: Vec<Option<broadcast::Receiver<bool>>>, sender: broadcast::Sender<bool>) {
+async fn listen(listeners: Vec<(Option<broadcast::Receiver<bool>>, Sender<bool>)>, sender: broadcast::Sender<bool>) {
         for mut listener in listeners {
         let sender = sender.clone();
             tokio::spawn(async move {
             loop {
-                if let Ok(message) = listener.as_mut().unwrap().recv().await {
+                if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
                     let _ = sender.send(message);
+                    listener.1.send(true).unwrap();
                 };
             }
         });
@@ -308,7 +310,9 @@ async fn main() {
     let mut skip = true;
 
     let receivers = status_bar.information.iter_mut().map(|info| {
-        info.receiver.take()
+        let (tx, rx) = mpsc::channel();
+        info.redraw = Some(rx);
+        (info.receiver.take(), tx)
     }).collect();
 
     tokio::spawn( async move {
