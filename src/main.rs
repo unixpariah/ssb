@@ -70,6 +70,8 @@ struct StatusBar {
     draw: mpsc::Receiver<bool>,
     cache: HashMap<i32, (ImageSurface, Context)>,
     dispatch: bool,
+
+    // If listeners goes out of scope hotwatch will break
     #[allow(dead_code)]
     listeners: Listeners,
 }
@@ -168,6 +170,7 @@ impl StatusBar {
                 self.cache.insert(width, (img_surface, context));
             }
 
+            // This will always be Some at this point
             let (img_surface, context) = self.cache.get(&width).unwrap();
 
             self.information.iter_mut().try_for_each(|info| {
@@ -187,10 +190,12 @@ impl StatusBar {
 
             canvas.copy_from_slice(&img.to_rgb8());
 
-            let layer = &surface.layer_surface;
-            layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
-            layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-            layer.wl_surface().commit();
+            if surface.configured {
+                let layer = &surface.layer_surface;
+                layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
+                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+                layer.wl_surface().commit();
+            }
 
             self.dispatch = true;
             self.cache = HashMap::new();
@@ -243,7 +248,6 @@ impl OutputHandler for StatusBar {
         qh: &QueueHandle<Self>,
         output: wl_output::WlOutput,
     ) {
-        let id = self.output_state.info(&output).unwrap().id;
         let layer = self.layer_shell.create_layer_surface(
             qh,
             self.compositor_state.create_surface(qh),
@@ -252,13 +256,16 @@ impl OutputHandler for StatusBar {
             Some(&output),
         );
 
+        // TODO: Better error handling
+        let info = self.output_state.info(&output).unwrap();
+        let width = info.logical_position.unwrap().0;
+        let id = info.id;
+
         if let Some(info) = self.surfaces.iter_mut().find(|info| info.output_id == id) {
-            if let Some((width, _)) = self.output_state.info(&output).unwrap().logical_size {
-                info.width = width;
-                info.configured = false;
-                layer.set_size(width as u32, HEIGHT as u32);
-                layer.commit();
-            }
+            info.width = width;
+            info.configured = false;
+            layer.set_size(width as u32, HEIGHT as u32);
+            layer.commit();
         }
     }
 
@@ -330,7 +337,7 @@ impl ShmHandler for StatusBar {
     }
 }
 
-async fn listen(
+async fn setup_listeners(
     listeners: Vec<(Option<broadcast::Receiver<bool>>, mpsc::Sender<bool>)>,
     sender: mpsc::Sender<bool>,
 ) {
@@ -338,6 +345,7 @@ async fn listen(
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
+                // This will always be Some at this point
                 if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
                     let _ = sender.send(message);
                     let _ = listener.1.send(true);
@@ -368,10 +376,10 @@ async fn main() {
         })
         .collect();
 
-    listen(receivers, tx).await;
+    setup_listeners(receivers, tx).await;
 
     loop {
-        status_bar.draw().expect("Failed to draw status bar");
+        status_bar.draw().ok();
 
         status_bar.surfaces.iter_mut().for_each(|surface| {
             if !surface.configured {
