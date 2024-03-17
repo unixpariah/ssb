@@ -36,7 +36,7 @@ The configuration file is located in ./ssb/src/config.rs. Ssb is supposed to be 
 After editing the configuration file, you need to rebuild the project and reinstall the binary.
 
 ## TODO
-- [ ] Somehow do cairo surface caching to lower cpu usage
-- [ ] Somehow add listener to volume change
+- [ ] Add listener to volume change
 - [ ] Fix crashing when new output is added
+- [ ] Add proper configuration
 - [ ] (Maybe) add x11 support

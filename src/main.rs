@@ -4,6 +4,7 @@ mod util;
 
 use cairo::{Context, Format, ImageSurface};
 use config::{COMMAND_CONFIGS, HEIGHT, TOPBAR, UNKOWN};
+use image::RgbImage;
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
 };
@@ -68,7 +69,7 @@ struct StatusBar {
     compositor_state: CompositorState,
     information: Vec<StatusData>,
     draw: mpsc::Receiver<bool>,
-    cache: HashMap<i32, (ImageSurface, Context)>,
+    cache: HashMap<i32, RgbImage>,
     dispatch: bool,
 
     // If listeners goes out of scope hotwatch will break
@@ -132,63 +133,63 @@ impl StatusBar {
     }
 
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
+            return Ok(());
+        }
+
+        let unchanged = !self
+            .information
+            .iter_mut()
+            .map(|info| {
+                if let Some(redraw) = &info.redraw {
+                    if redraw.try_recv().is_ok() || info.output.is_empty() {
+                        let output =
+                            get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
+
+                        if output != info.output {
+                            info.output = output;
+                            return true;
+                        }
+                    };
+                }
+                false
+            })
+            .fold(false, |a, b| if b { b } else { a });
+
+        if unchanged {
+            self.dispatch = false;
+            return Ok(());
+        }
+
         self.surfaces.iter_mut().try_for_each(|surface| {
-            if !surface.configured {
-                return Ok(());
-            }
-
-            let unchanged = !self
-                .information
-                .iter_mut()
-                .map(|info| {
-                    if let Some(redraw) = &info.redraw {
-                        if redraw.try_recv().is_ok() || info.output.is_empty() {
-                            let output =
-                                get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
-
-                            if output != info.output {
-                                info.output = output;
-                                return true;
-                            }
-                        };
-                    }
-                    false
-                })
-                .fold(false, |a, b| if b { b } else { a });
-
-            if unchanged {
-                self.dispatch = false;
-                return Ok(());
-            }
-
             let width = surface.width;
             if self.cache.get(&width).is_none() {
                 let img_surface = ImageSurface::create(Format::Rgb30, width, HEIGHT)?;
                 let context = Context::new(&img_surface)?;
                 set_context_properties(&context);
 
-                self.cache.insert(width, (img_surface, context));
+                self.information.iter_mut().try_for_each(|info| {
+                    let format = info.format.replace("s%", &info.output);
+                    context.move_to(info.x, info.y);
+                    let _ = context.show_text(&format);
+                    Ok::<(), Box<dyn Error>>(())
+                })?;
+
+                let mut img = Vec::new();
+                let _ = img_surface.write_to_png(&mut img);
+                let img = image::load_from_memory(&img)?;
+
+                self.cache.insert(width, img.to_rgb8());
             }
 
             // This will always be Some at this point
-            let (img_surface, context) = self.cache.get(&width).unwrap();
-
-            self.information.iter_mut().try_for_each(|info| {
-                let format = info.format.replace("s%", &info.output);
-                context.move_to(info.x, info.y);
-                let _ = context.show_text(&format);
-                Ok::<(), Box<dyn Error>>(())
-            })?;
-
-            let mut img = Vec::new();
-            img_surface.write_to_png(&mut img)?;
-            let img = image::load_from_memory(&img)?;
+            let img = self.cache.get(&width).unwrap();
 
             let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 3, &self.shm)?;
             let (buffer, canvas) =
                 pool.create_buffer(width, HEIGHT, width * 3, wl_shm::Format::Bgr888)?;
 
-            canvas.copy_from_slice(&img.to_rgb8());
+            canvas.copy_from_slice(img);
 
             if surface.configured {
                 let layer = &surface.layer_surface;
@@ -245,28 +246,9 @@ impl OutputHandler for StatusBar {
     fn update_output(
         &mut self,
         _conn: &Connection,
-        qh: &QueueHandle<Self>,
-        output: wl_output::WlOutput,
+        _qh: &QueueHandle<Self>,
+        _output: wl_output::WlOutput,
     ) {
-        let layer = self.layer_shell.create_layer_surface(
-            qh,
-            self.compositor_state.create_surface(qh),
-            Layer::Top,
-            Some("ssb"),
-            Some(&output),
-        );
-
-        // TODO: Better error handling
-        let info = self.output_state.info(&output).unwrap();
-        let width = info.logical_position.unwrap().0;
-        let id = info.id;
-
-        if let Some(info) = self.surfaces.iter_mut().find(|info| info.output_id == id) {
-            info.width = width;
-            info.configured = false;
-            layer.set_size(width as u32, HEIGHT as u32);
-            layer.commit();
-        }
     }
 
     fn output_destroyed(
@@ -379,8 +361,7 @@ async fn main() {
     setup_listeners(receivers, tx).await;
 
     loop {
-        status_bar.draw().ok();
-
+        status_bar.draw().expect("Failed to draw");
         status_bar.surfaces.iter_mut().for_each(|surface| {
             if !surface.configured {
                 surface.configured = true;
@@ -398,8 +379,7 @@ async fn main() {
             skip = false;
             continue;
         }
-
-        let _ = status_bar.draw.recv();
+        status_bar.draw.recv().expect("Failed to receive");
     }
 }
 
