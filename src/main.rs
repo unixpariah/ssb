@@ -2,9 +2,9 @@ mod config;
 mod modules;
 mod util;
 
-use cairo::{Context, Format, ImageSurface};
-use config::{COMMAND_CONFIGS, HEIGHT, TOPBAR, UNKOWN};
-use image::RgbImage;
+use cairo::{Context, ImageSurface};
+use config::{COMMAND_CONFIGS, FONT, HEIGHT, TOPBAR, UNKOWN};
+use image::{imageops, ColorType, DynamicImage, RgbImage};
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
 };
@@ -23,7 +23,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::set_context_properties,
+    helpers::{set_background_context, set_info_context},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -48,6 +48,7 @@ struct Surface {
     layer_surface: LayerSurface,
     width: i32,
     configured: bool,
+    background: DynamicImage,
 }
 
 pub struct StatusData {
@@ -58,6 +59,7 @@ pub struct StatusData {
     format: &'static str,
     receiver: Option<broadcast::Receiver<bool>>,
     redraw: Option<mpsc::Receiver<bool>>,
+    cache: DynamicImage,
 }
 
 struct StatusBar {
@@ -111,6 +113,7 @@ impl StatusBar {
                     format,
                     receiver,
                     redraw: None,
+                    cache: DynamicImage::new(0, 0, ColorType::L8),
                 }
             })
             .collect();
@@ -137,6 +140,21 @@ impl StatusBar {
             return Ok(());
         }
 
+        let surface = ImageSurface::create(cairo::Format::ARgb32, 100, 100)?;
+        let context = cairo::Context::new(&surface)?;
+
+        context.select_font_face(
+            FONT.family,
+            cairo::FontSlant::Normal,
+            if FONT.bold {
+                cairo::FontWeight::Bold
+            } else {
+                cairo::FontWeight::Normal
+            },
+        );
+        context.set_font_size(FONT.size);
+
+        // TODO: Handle unwraps
         let unchanged = !self
             .information
             .iter_mut()
@@ -147,6 +165,27 @@ impl StatusBar {
                             get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
 
                         if output != info.output {
+                            let format = info.format.replace("s%", &output);
+                            let extents = context.text_extents(&format).unwrap();
+
+                            let surface = ImageSurface::create(
+                                cairo::Format::ARgb32,
+                                extents.width() as i32,
+                                extents.height() as i32,
+                            )
+                            .unwrap();
+                            let context = cairo::Context::new(&surface).unwrap();
+                            set_info_context(&context, extents);
+
+                            let _ = context.show_text(&format);
+
+                            let mut img = Vec::new();
+                            let _ = surface.write_to_png(&mut img);
+
+                            if let Ok(img) = image::load_from_memory(&img) {
+                                info.cache = img;
+                            }
+
                             info.output = output;
                             return true;
                         }
@@ -163,23 +202,20 @@ impl StatusBar {
 
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
+
             if self.cache.get(&width).is_none() {
-                let img_surface = ImageSurface::create(Format::Rgb30, width, HEIGHT)?;
-                let context = Context::new(&img_surface)?;
-                set_context_properties(&context);
+                let mut background = surface.background.clone();
+                self.information.iter().for_each(|info| {
+                    let img = &info.cache;
+                    imageops::overlay(
+                        &mut background,
+                        img,
+                        info.x as i64,
+                        info.y as i64 - img.height() as i64 / 2,
+                    );
+                });
 
-                self.information.iter_mut().try_for_each(|info| {
-                    let format = info.format.replace("s%", &info.output);
-                    context.move_to(info.x, info.y);
-                    let _ = context.show_text(&format);
-                    Ok::<(), Box<dyn Error>>(())
-                })?;
-
-                let mut img = Vec::new();
-                let _ = img_surface.write_to_png(&mut img);
-                let img = image::load_from_memory(&img)?;
-
-                self.cache.insert(width, img.to_rgb8());
+                self.cache.insert(width, background.to_rgb8());
             }
 
             // This will always be Some at this point
@@ -233,11 +269,22 @@ impl OutputHandler for StatusBar {
                 layer.set_size(width as u32, HEIGHT as u32);
                 layer.commit();
 
+                let img_surface =
+                    ImageSurface::create(cairo::Format::Rgb30, width, HEIGHT).unwrap();
+                let context = Context::new(&img_surface).unwrap();
+                set_background_context(&context);
+
+                let mut background = Vec::new();
+                let _ = img_surface.write_to_png(&mut background);
+
+                let background = image::load_from_memory(&background).unwrap();
+
                 self.surfaces.push(Surface {
                     output_id: info.id,
                     layer_surface: layer,
                     width,
                     configured: false,
+                    background,
                 });
             }
         }
