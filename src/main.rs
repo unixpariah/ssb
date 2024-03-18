@@ -51,11 +51,22 @@ struct Surface {
     background: DynamicImage,
 }
 
-struct Cache {
+struct ImgCache {
     img: DynamicImage,
     width: i32,
     height: i32,
     unchanged: bool,
+}
+
+impl ImgCache {
+    fn new(img: DynamicImage, width: i32, height: i32, unchanged: bool) -> Self {
+        Self {
+            img,
+            width,
+            height,
+            unchanged,
+        }
+    }
 }
 
 pub struct StatusData {
@@ -66,7 +77,7 @@ pub struct StatusData {
     format: &'static str,
     receiver: Option<broadcast::Receiver<bool>>,
     redraw: Option<mpsc::Receiver<bool>>,
-    cache: Cache,
+    cache: ImgCache,
 }
 
 struct StatusBar {
@@ -120,12 +131,7 @@ impl StatusBar {
                     format,
                     receiver,
                     redraw: None,
-                    cache: Cache {
-                        img: DynamicImage::new(0, 0, ColorType::L8),
-                        width: 0,
-                        height: 0,
-                        unchanged: false,
-                    },
+                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
                 }
             })
             .collect();
@@ -152,7 +158,7 @@ impl StatusBar {
             return Ok(());
         }
 
-        let surface = ImageSurface::create(cairo::Format::ARgb32, 100, 100)?;
+        let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0)?;
         let context = cairo::Context::new(&surface)?;
 
         context.select_font_face(
@@ -203,12 +209,7 @@ impl StatusBar {
                             let _ = surface.write_to_png(&mut img);
 
                             if let Ok(img) = image::load_from_memory(&img) {
-                                info.cache = Cache {
-                                    img,
-                                    width,
-                                    height,
-                                    unchanged: false,
-                                };
+                                info.cache = ImgCache::new(img, width, height, false);
                             }
 
                             info.output = output;
@@ -227,6 +228,7 @@ impl StatusBar {
             return Ok(());
         }
 
+        self.cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
 
@@ -266,8 +268,6 @@ impl StatusBar {
             }
 
             self.dispatch = true;
-            self.cache = HashMap::new();
-
             Ok::<(), Box<dyn Error>>(())
         })
     }
