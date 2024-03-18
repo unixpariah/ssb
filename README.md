@@ -18,13 +18,15 @@ git clone https://github.com/unixpariah/ssb
 
 2. Edit configuration in ./ssb/src/config.rs
 
-3. Build the project and install binary
+3. Install dependencies or use nix flake
+
+4. Build the project and install binary
 
 ```sh
 make install
 ```
 
-4. Run the binary
+5. Run the binary
 
 ```sh
 ssb
