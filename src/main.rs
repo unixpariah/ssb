@@ -51,6 +51,13 @@ struct Surface {
     background: DynamicImage,
 }
 
+struct Cache {
+    img: DynamicImage,
+    width: i32,
+    height: i32,
+    unchanged: bool,
+}
+
 pub struct StatusData {
     output: String,
     command: Cmd,
@@ -59,7 +66,7 @@ pub struct StatusData {
     format: &'static str,
     receiver: Option<broadcast::Receiver<bool>>,
     redraw: Option<mpsc::Receiver<bool>>,
-    cache: DynamicImage,
+    cache: Cache,
 }
 
 struct StatusBar {
@@ -113,7 +120,12 @@ impl StatusBar {
                     format,
                     receiver,
                     redraw: None,
-                    cache: DynamicImage::new(0, 0, ColorType::L8),
+                    cache: Cache {
+                        img: DynamicImage::new(0, 0, ColorType::L8),
+                        width: 0,
+                        height: 0,
+                        unchanged: false,
+                    },
                 }
             })
             .collect();
@@ -168,12 +180,20 @@ impl StatusBar {
                             let format = info.format.replace("s%", &output);
                             let extents = context.text_extents(&format).unwrap();
 
-                            let surface = ImageSurface::create(
-                                cairo::Format::ARgb32,
-                                extents.width() as i32,
-                                extents.height() as i32,
-                            )
-                            .unwrap();
+                            let width = if extents.width() as i32 > info.cache.width {
+                                extents.width() as i32
+                            } else {
+                                info.cache.width
+                            };
+
+                            let height = if extents.height() as i32 > info.cache.height {
+                                extents.height() as i32
+                            } else {
+                                info.cache.height
+                            };
+
+                            let surface =
+                                ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
                             let context = cairo::Context::new(&surface).unwrap();
                             set_info_context(&context, extents);
 
@@ -183,7 +203,12 @@ impl StatusBar {
                             let _ = surface.write_to_png(&mut img);
 
                             if let Ok(img) = image::load_from_memory(&img) {
-                                info.cache = img;
+                                info.cache = Cache {
+                                    img,
+                                    width,
+                                    height,
+                                    unchanged: false,
+                                };
                             }
 
                             info.output = output;
@@ -191,6 +216,8 @@ impl StatusBar {
                         }
                     };
                 }
+
+                info.cache.unchanged = true;
                 false
             })
             .fold(false, |a, b| if b { b } else { a });
@@ -204,14 +231,18 @@ impl StatusBar {
             let width = surface.width;
 
             if self.cache.get(&width).is_none() {
-                let mut background = surface.background.clone();
+                let background = &mut surface.background;
                 self.information.iter().for_each(|info| {
+                    if info.cache.unchanged {
+                        return;
+                    }
+
                     let img = &info.cache;
                     imageops::overlay(
-                        &mut background,
-                        img,
+                        background,
+                        &img.img,
                         info.x as i64,
-                        info.y as i64 - img.height() as i64 / 2,
+                        info.y as i64 - img.height as i64 / 2,
                     );
                 });
 
