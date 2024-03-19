@@ -91,10 +91,6 @@ struct StatusBar {
     draw: mpsc::Receiver<bool>,
     cache: HashMap<i32, RgbImage>,
     dispatch: bool,
-
-    // If listeners goes out of scope hotwatch will break
-    #[allow(dead_code)]
-    listeners: Listeners,
 }
 
 impl StatusBar {
@@ -146,7 +142,6 @@ impl StatusBar {
             shm,
             surfaces: Vec::new(),
             information,
-            listeners,
             draw: rx,
             cache: HashMap::new(),
             dispatch: true,

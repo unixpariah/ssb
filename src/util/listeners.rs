@@ -14,6 +14,11 @@ pub enum Trigger {
     FileChange(&'static str),
 }
 
+pub struct WorkspaceListenerData {
+    tx: broadcast::Sender<bool>,
+    listener: EventListener,
+}
+
 pub struct TimeListenerData {
     tx: broadcast::Sender<bool>,
     interval: u64,
@@ -26,7 +31,7 @@ pub struct FileChangeListenerData {
 }
 
 pub struct Listeners {
-    pub workspace_listener: Option<broadcast::Sender<bool>>,
+    pub workspace_listener: Arc<Mutex<Option<WorkspaceListenerData>>>,
     pub file_change_listener: Arc<Mutex<Option<FileChangeListenerData>>>,
     pub time_passed_listener: Arc<Mutex<Vec<TimeListenerData>>>,
 }
@@ -34,15 +39,15 @@ pub struct Listeners {
 impl Listeners {
     pub fn new() -> Self {
         Self {
-            workspace_listener: None,
             file_change_listener: Arc::new(Mutex::new(None)),
+            workspace_listener: Arc::new(Mutex::new(None)),
             time_passed_listener: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {
-        if let Some(workspace_listener) = &self.workspace_listener {
-            return workspace_listener.subscribe();
+        if let Some(workspace_listener) = self.workspace_listener.lock().unwrap().as_ref() {
+            return workspace_listener.tx.subscribe();
         }
 
         let mut listener = EventListener::new();
@@ -70,17 +75,15 @@ impl Listeners {
             });
         }
 
-        thread::spawn(move || {
-            listener.start_listener().expect("Failed to start listener");
-        });
-
-        self.workspace_listener = Some(tx);
+        self.workspace_listener =
+            Arc::new(Mutex::new(Some(WorkspaceListenerData { tx, listener })));
         rx
     }
 
     pub fn start_listeners(&mut self) {
         let time_passed_listener = Arc::clone(&self.time_passed_listener);
         let file_change_listener = Arc::clone(&self.file_change_listener);
+        let workspace_listener = Arc::clone(&self.workspace_listener);
 
         if time_passed_listener.lock().unwrap().is_empty() {
             return;
@@ -109,7 +112,7 @@ impl Listeners {
         thread::spawn(move || {
             if let Ok(mut file_change_listener) = file_change_listener.lock() {
                 loop {
-                    let mut buffer = [0; 4096];
+                    let mut buffer = [0; 1024];
                     let events = file_change_listener
                         .as_mut()
                         .unwrap()
@@ -118,8 +121,18 @@ impl Listeners {
                         .expect("Failed to read events");
 
                     events.for_each(|_| {
-                        let _ = file_change_listener.as_ref().unwrap().tx.send(true);
+                        if let Some(file_change_listener) = file_change_listener.as_ref() {
+                            let _ = file_change_listener.tx.send(true);
+                        }
                     });
+                }
+            }
+        });
+
+        thread::spawn(move || {
+            if let Ok(mut workspace_listener) = workspace_listener.lock() {
+                if let Some(listener) = workspace_listener.as_mut() {
+                    let _ = listener.listener.start_listener();
                 }
             }
         });
