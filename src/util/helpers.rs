@@ -1,52 +1,58 @@
-use crate::config::{BACKGROUND, FONT};
+use crate::config::CONFIG;
 use cairo::{Context, TextExtents};
 
 pub fn set_background_context(context: &Context) {
+    let background = CONFIG.background;
+    let font = &CONFIG.font;
+
     context.set_source_rgb(
-        BACKGROUND[0] as f64 / 255.0,
-        BACKGROUND[1] as f64 / 255.0,
-        BACKGROUND[2] as f64 / 255.0,
+        background[0] as f64 / 255.0,
+        background[1] as f64 / 255.0,
+        background[2] as f64 / 255.0,
     );
     let _ = context.paint();
     context.set_source_rgb(
-        FONT.color[0] as f64 / 255.0,
-        FONT.color[1] as f64 / 255.0,
-        FONT.color[2] as f64 / 255.0,
+        font.color[0] as f64 / 255.0,
+        font.color[1] as f64 / 255.0,
+        font.color[2] as f64 / 255.0,
     );
     context.select_font_face(
-        FONT.family,
+        font.family,
         cairo::FontSlant::Normal,
-        if FONT.bold {
+        if font.bold {
             cairo::FontWeight::Bold
         } else {
             cairo::FontWeight::Normal
         },
     );
-    context.set_font_size(FONT.size);
+    context.set_font_size(font.size);
 }
 
 pub fn set_info_context(context: &Context, extents: TextExtents) {
+    let background = CONFIG.background;
+    let font = &CONFIG.font;
+
     context.set_source_rgb(
-        BACKGROUND[0] as f64 / 255.0,
-        BACKGROUND[1] as f64 / 255.0,
-        BACKGROUND[2] as f64 / 255.0,
+        background[0] as f64 / 255.0,
+        background[1] as f64 / 255.0,
+        background[2] as f64 / 255.0,
     );
     let _ = context.paint();
 
     context.move_to(extents.x_bearing().abs(), extents.y_bearing().abs());
     context.set_source_rgb(
-        FONT.color[0] as f64 / 255.,
-        FONT.color[1] as f64 / 255.,
-        FONT.color[2] as f64 / 255.,
+        font.color[0] as f64 / 255.,
+        font.color[1] as f64 / 255.,
+        font.color[2] as f64 / 255.,
     );
     context.select_font_face(
-        FONT.family,
+        font.family,
         cairo::FontSlant::Normal,
-        if FONT.bold {
+        if font.bold {
             cairo::FontWeight::Bold
         } else {
             cairo::FontWeight::Normal
         },
     );
-    context.set_font_size(FONT.size);
+    context.set_font_size(font.size);
 }

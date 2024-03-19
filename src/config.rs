@@ -6,7 +6,30 @@ use crate::{
     util::listeners::Trigger,
     Cmd,
 };
-use smithay_client_toolkit::shell::wlr_layer::Anchor;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref CONFIG: Config = Config {
+        unkown: "N/A",
+        background: [20, 15, 33],
+        topbar: true,
+        height: 40,
+        font: Font {
+            family: "JetBrainsMono Nerd Font",
+            size: 16.0,
+            bold: true,
+            color: [255, 255, 255],
+        },
+    };
+}
+
+pub struct Config {
+    pub unkown: &'static str,
+    pub background: [u8; 3],
+    pub topbar: bool,
+    pub height: i32,
+    pub font: Font,
+}
 
 /*               _                        __ _                       _   _
  *       ___ ___| |__     ___ ___  _ __  / _(_) __ _ _   _ _ __ __ _| |_(_) ___  _ __
@@ -17,20 +40,8 @@ use smithay_client_toolkit::shell::wlr_layer::Anchor;
  */
 
 // Value to display when data is not available
-pub const UNKOWN: &str = "N/A";
 
 // Background color              R   G   B
-pub const BACKGROUND: [u8; 3] = [20, 15, 33];
-
-pub const TOPBAR: bool = true; // true: status bar at the top, false: status bar at the bottom
-pub const HEIGHT: i32 = 40; // Height of status bar in pixels
-pub const FONT: Font = Font {
-    family: "JetBrainsMono Nerd Font",
-    size: 16.0,
-    bold: true,
-    //      R    G    B
-    color: [255, 255, 255],
-};
 
 /*
  *  Function          Description                                                Argument                                                                 Example

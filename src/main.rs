@@ -3,7 +3,7 @@ mod modules;
 mod util;
 
 use cairo::{Context, ImageSurface};
-use config::{COMMAND_CONFIGS, FONT, HEIGHT, TOPBAR, UNKOWN};
+use config::{COMMAND_CONFIGS, CONFIG};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
@@ -156,16 +156,17 @@ impl StatusBar {
         let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0)?;
         let context = cairo::Context::new(&surface)?;
 
+        let font = &CONFIG.font;
         context.select_font_face(
-            FONT.family,
+            font.family,
             cairo::FontSlant::Normal,
-            if FONT.bold {
+            if font.bold {
                 cairo::FontWeight::Bold
             } else {
                 cairo::FontWeight::Normal
             },
         );
-        context.set_font_size(FONT.size);
+        context.set_font_size(font.size);
 
         // TODO: Handle unwraps
         let unchanged = !self
@@ -175,7 +176,7 @@ impl StatusBar {
                 if let Some(redraw) = &info.redraw {
                     if redraw.try_recv().is_ok() || info.output.is_empty() {
                         let output =
-                            get_command_output(&info.command).unwrap_or(UNKOWN.to_string());
+                            get_command_output(&info.command).unwrap_or(CONFIG.unkown.to_string());
 
                         if output != info.output {
                             let format = info.format.replace("s%", &output);
@@ -226,6 +227,7 @@ impl StatusBar {
         self.cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
+            let height = CONFIG.height;
 
             if self.cache.get(&width).is_none() {
                 let background = &mut surface.background;
@@ -249,15 +251,15 @@ impl StatusBar {
             // This will always be Some at this point
             let img = self.cache.get(&width).unwrap();
 
-            let mut pool = SlotPool::new(width as usize * HEIGHT as usize * 3, &self.shm)?;
+            let mut pool = SlotPool::new(width as usize * height as usize * 3, &self.shm)?;
             let (buffer, canvas) =
-                pool.create_buffer(width, HEIGHT, width * 3, wl_shm::Format::Bgr888)?;
+                pool.create_buffer(width, height, width * 3, wl_shm::Format::Bgr888)?;
 
             canvas.copy_from_slice(img);
 
             if surface.configured {
                 let layer = &surface.layer_surface;
-                layer.wl_surface().damage_buffer(0, 0, width, HEIGHT);
+                layer.wl_surface().damage_buffer(0, 0, width, height);
                 layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
                 layer.wl_surface().commit();
             }
@@ -289,14 +291,19 @@ impl OutputHandler for StatusBar {
         );
 
         if let Some(info) = self.output_state.info(&output) {
+            let height = CONFIG.height;
             if let Some((width, _)) = info.logical_size {
-                layer.set_anchor(if TOPBAR { Anchor::TOP } else { Anchor::BOTTOM });
-                layer.set_exclusive_zone(HEIGHT);
-                layer.set_size(width as u32, HEIGHT as u32);
+                layer.set_anchor(if CONFIG.topbar {
+                    Anchor::TOP
+                } else {
+                    Anchor::BOTTOM
+                });
+                layer.set_exclusive_zone(height);
+                layer.set_size(width as u32, height as u32);
                 layer.commit();
 
                 let img_surface =
-                    ImageSurface::create(cairo::Format::Rgb30, width, HEIGHT).unwrap();
+                    ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
                 set_background_context(&context);
 

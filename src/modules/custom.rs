@@ -2,7 +2,7 @@ use super::{
     backlight::backlight_details, battery::battery_details, cpu_usage::cpu_usage, hyprland,
     memory::memory_usage,
 };
-use crate::{config::UNKOWN, Cmd};
+use crate::{config::CONFIG, Cmd};
 use std::{error::Error, process::Command};
 
 pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> {
@@ -16,7 +16,7 @@ pub fn new_command(command: &str, args: &str) -> Result<String, Box<dyn Error>> 
     .to_string();
 
     if output.is_empty() {
-        return Ok(UNKOWN.to_string());
+        return Ok(CONFIG.unkown.to_string());
     }
 
     Ok(output)

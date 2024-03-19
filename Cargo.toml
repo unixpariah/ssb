@@ -8,6 +8,10 @@ cairo-rs = { version = "0.19.2", default-features = false, features = ["png"] }
 hyprland = { version = "0.3.x", default-features = false, features = ["tokio", "listener"] }
 image = { version = "0.25.0", default-features = false, features = ["png"] }
 inotify = "0.10.2"
+lazy_static = "1.4.0"
+serde = "1.0.197"
+serde_derive = "1.0.197"
 smithay-client-toolkit = { version = "0.18.1", default-features = false }
 tokio = { version = "1.36.0", features = ["sync"] }
+toml = "0.8.12"
 wayland-client = "0.31.2"
