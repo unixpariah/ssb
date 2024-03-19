@@ -17,7 +17,7 @@ pub fn set_background_context(context: &Context) {
         font.color[2] as f64 / 255.0,
     );
     context.select_font_face(
-        font.family,
+        &font.family,
         cairo::FontSlant::Normal,
         if font.bold {
             cairo::FontWeight::Bold
@@ -46,7 +46,7 @@ pub fn set_info_context(context: &Context, extents: TextExtents) {
         font.color[2] as f64 / 255.,
     );
     context.select_font_face(
-        font.family,
+        &font.family,
         cairo::FontSlant::Normal,
         if font.bold {
             cairo::FontWeight::Bold

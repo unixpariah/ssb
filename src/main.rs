@@ -158,7 +158,7 @@ impl StatusBar {
 
         let font = &CONFIG.font;
         context.select_font_face(
-            font.family,
+            &font.family,
             cairo::FontSlant::Normal,
             if font.bold {
                 cairo::FontWeight::Bold
