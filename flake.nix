@@ -23,6 +23,8 @@
             cargo
             pkg-config
             cairo
+            rustfmt
+            rust-analyzer
           ];
         };
       in {

@@ -136,7 +136,7 @@ impl StatusBar {
             })
             .collect();
 
-        listeners.start_time_passed_listeners();
+        listeners.start_listeners();
 
         Self {
             compositor_state,
