@@ -1,5 +1,3 @@
-use std::fs;
-
 use crate::{
     modules::{backlight::BacklightOpts, battery::BatteryOpts, memory::RamOpts},
     util::listeners::Trigger,
@@ -7,25 +5,31 @@ use crate::{
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
+use std::fs;
 
 lazy_static! {
-    pub static ref CONFIG: Config = get_config();
-}
-
-fn get_config() -> Config {
-    let config_dir = dirs::config_dir().unwrap_or("".into());
-    let config_path = config_dir.join("ssb/config.toml");
-
-    let file = fs::read_to_string(&config_path).unwrap_or("".to_string());
-    let config = toml::from_str::<Config>(file.trim());
-    match config {
+    pub static ref CONFIG: Config = match get_config() {
         Ok(config) => config,
         Err(_) => {
-            let config = Config::default();
-            let _ = fs::write(&config_path, toml::to_string(&config).unwrap());
-            config
+            eprintln!("Error while parsing configuration file, using default one");
+            Config::default()
         }
+    };
+}
+
+fn get_config() -> Result<Config, Box<dyn crate::Error>> {
+    let config_dir = dirs::config_dir().ok_or("")?;
+    let config_path = config_dir.join("ssb/config.toml");
+
+    if !config_path.exists() {
+        println!("Configuration file not found, generating a new one.");
+        let config = Config::default();
+        let _ = fs::write(&config_path, toml::to_string(&config)?);
     }
+
+    let file = fs::read_to_string(&config_path)?;
+
+    Ok(toml::from_str::<Config>(file.trim())?)
 }
 
 impl Default for Config {

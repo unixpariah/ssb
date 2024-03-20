@@ -1,4 +1,4 @@
-use crate::config::CONFIG;
+use crate::CONFIG;
 use cairo::{Context, TextExtents};
 
 pub fn set_background_context(context: &Context) {

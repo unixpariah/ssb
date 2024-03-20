@@ -16,7 +16,7 @@ pub fn workspaces(workspace: &[String; 2]) -> Result<String, Box<dyn Error>> {
         } else {
             inactive
         };
-        workspace_state.push_str(&workspace);
+        workspace_state.push_str(workspace);
         workspace_state.push(' ');
 
         workspace_state

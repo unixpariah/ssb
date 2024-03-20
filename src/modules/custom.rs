@@ -2,7 +2,7 @@ use super::{
     backlight::backlight_details, battery::battery_details, cpu_usage::cpu_usage, hyprland,
     memory::memory_usage,
 };
-use crate::{config::CONFIG, Cmd};
+use crate::{Cmd, CONFIG};
 use std::{error::Error, process::Command};
 
 pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {

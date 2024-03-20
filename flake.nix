@@ -25,6 +25,7 @@
             cairo
             rustfmt
             rust-analyzer
+            clippy
           ];
         };
       in {

@@ -2,8 +2,8 @@ mod config;
 mod modules;
 mod util;
 
+use crate::config::CONFIG;
 use cairo::{Context, ImageSurface};
-use config::CONFIG;
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
