@@ -21,10 +21,10 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{collections::HashMap, error::Error, path::PathBuf, sync::mpsc};
+use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{set_background_context, set_info_context},
+    helpers::{get_backlight_path, set_background_context, set_info_context},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -118,9 +118,9 @@ impl StatusBar {
                     Cmd::Ram(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Battery(_, interval, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Backlight(_, _) => listeners.new_file_change_listener(&PathBuf::from(
-                        "/sys/class/backlight/intel_backlight/brightness",
-                    )),
+                    Cmd::Backlight(_, _) => listeners.new_file_change_listener(
+                        &get_backlight_path().expect("Backlight not found"),
+                    ),
                     Cmd::Custom(_, trigger, _) => match trigger {
                         Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                         Trigger::TimePassed(interval) => {

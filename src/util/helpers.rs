@@ -28,6 +28,22 @@ pub fn set_background_context(context: &Context) {
     context.set_font_size(font.size);
 }
 
+pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>> {
+    let mut dirs = std::fs::read_dir("/sys/class/backlight")?;
+    let backlight_path = dirs
+        .find(|entry| {
+            let entry = entry.as_ref().unwrap().path();
+            if entry.join("brightness").exists() && entry.join("max_brightness").exists() {
+                return true;
+            }
+
+            false
+        })
+        .ok_or("")??;
+
+    Ok(backlight_path.path())
+}
+
 pub fn set_info_context(context: &Context, extents: TextExtents) {
     let background = CONFIG.background;
     let font = &CONFIG.font;

@@ -35,5 +35,7 @@ ssb
 The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on first run.
 
 ## TODO
+- [ ] Implement hot refresh config
+- [ ] Add better styling
 - [ ] Add listener to volume change
 - [ ] Fix crashing when new output is added
