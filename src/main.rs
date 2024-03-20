@@ -118,9 +118,9 @@ impl StatusBar {
                     Cmd::Ram(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Battery(_, interval, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Backlight(_, _) => {
-                        listeners.new_file_change_listener(&PathBuf::from("/sys/class/backlight"))
-                    }
+                    Cmd::Backlight(_, _) => listeners.new_file_change_listener(&PathBuf::from(
+                        "/sys/class/backlight/intel_backlight/brightness",
+                    )),
                     Cmd::Custom(_, trigger, _) => match trigger {
                         Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                         Trigger::TimePassed(interval) => {
