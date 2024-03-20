@@ -1,17 +1,18 @@
 use hyprland::event_listener::EventListener;
 use inotify::{Inotify, WatchMask};
+use serde::{Deserialize, Serialize};
 use std::{
+    path::PathBuf,
     sync::{Arc, Mutex},
     thread,
 };
 use tokio::sync::broadcast;
 
-#[derive(Copy, Clone, Debug)]
-#[allow(dead_code)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Trigger {
     WorkspaceChanged,
     TimePassed(u64),
-    FileChange(&'static str),
+    FileChange(PathBuf),
 }
 
 pub struct WorkspaceListenerData {
@@ -113,18 +114,16 @@ impl Listeners {
             if let Ok(mut file_change_listener) = file_change_listener.lock() {
                 loop {
                     let mut buffer = [0; 1024];
-                    let events = file_change_listener
-                        .as_mut()
-                        .unwrap()
-                        .inotify
-                        .read_events_blocking(&mut buffer)
-                        .expect("Failed to read events");
+                    if let Some(file_change_listener) = file_change_listener.as_mut() {
+                        let events = file_change_listener
+                            .inotify
+                            .read_events_blocking(&mut buffer)
+                            .expect("Failed to read events");
 
-                    events.for_each(|_| {
-                        if let Some(file_change_listener) = file_change_listener.as_ref() {
+                        events.for_each(|_| {
                             let _ = file_change_listener.tx.send(true);
-                        }
-                    });
+                        });
+                    }
                 }
             }
         });
@@ -155,7 +154,7 @@ impl Listeners {
         rx
     }
 
-    pub fn new_file_change_listener(&mut self, path: &'static str) -> broadcast::Receiver<bool> {
+    pub fn new_file_change_listener(&mut self, path: &PathBuf) -> broadcast::Receiver<bool> {
         let (tx, rx) = broadcast::channel(1);
 
         if let Ok(mut file_change_listener) = self.file_change_listener.lock() {

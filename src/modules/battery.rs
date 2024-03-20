@@ -1,6 +1,8 @@
 use std::error::Error;
 
-#[derive(Copy, Clone, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum BatteryOpts {
     Capacity,
     Status,

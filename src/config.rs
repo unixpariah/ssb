@@ -1,12 +1,8 @@
 use std::fs;
 
-use crate::{
-    modules::{backlight::BacklightOpts, battery::BatteryOpts, memory::RamOpts},
-    util::listeners::Trigger,
-    Cmd,
-};
+use crate::{util::listeners::Trigger, Cmd};
 use lazy_static::lazy_static;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 lazy_static! {
     pub static ref CONFIG: Config = get_config();
@@ -14,9 +10,10 @@ lazy_static! {
 
 fn get_config() -> Config {
     let config_dir = dirs::config_dir().unwrap_or("".into());
-    let file = fs::read_to_string(format!("{}/ssb/config.toml", config_dir.display()))
-        .unwrap_or("".to_string());
-    toml::from_str(file.trim()).unwrap_or_default()
+    let config_path = config_dir.join("ssb/config.toml");
+
+    let file = fs::read_to_string(config_path.clone()).unwrap_or("".to_string());
+    toml::from_str::<Config>(file.trim()).unwrap_or_default()
 }
 
 impl Default for Config {
@@ -27,11 +24,12 @@ impl Default for Config {
             topbar: topbar(),
             height: height(),
             font: Font::default(),
+            modules: Vec::new(),
         }
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: String,
@@ -43,9 +41,19 @@ pub struct Config {
     pub height: i32,
     #[serde(default)]
     pub font: Font,
+    pub modules: Vec<Module>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Module {
+    pub command: Cmd,
+    pub x: f64,
+    pub y: f64,
+    pub format: String,
+    pub trigger: Trigger,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Font {
     pub family: String,
     pub size: f64,
@@ -79,18 +87,3 @@ impl Default for Font {
         }
     }
 }
-
-const BACKLIGHT_PATH: &str = "/sys/class/backlight/intel_backlight/brightness";
-
-#[rustfmt::skip]
-pub const COMMAND_CONFIGS: &[(Cmd, f64, f64, &str, Trigger)] = &[
-    // Command                                x        y      format    Trigger
-    (Cmd::Battery(BatteryOpts::Capacity),     1390.0,  20.0,  " s%%",  Trigger::TimePassed(1010)            ),
-    (Cmd::Custom("pamixer", "--get-volume"),  1540.0,  20.0,  " s%%",  Trigger::TimePassed(1000)            ), 
-    (Cmd::Custom("date", "+%H:%M"),           925.0,   20.0,  " s%",   Trigger::TimePassed(60000)           ),
-    (Cmd::Custom("iwgetid", "-r"),            1775.0,  20.0,  "  s%",  Trigger::TimePassed(60000)           ),
-    (Cmd::Backlight(BacklightOpts::Perc),     1475.0,  20.0,  "󰖨 s%%",  Trigger::FileChange(BACKLIGHT_PATH)  ),
-    (Cmd::Workspaces(" ", " "),             35.0,    20.0,  "s%",     Trigger::WorkspaceChanged            ),
-    (Cmd::Ram(RamOpts::PercUsed),             1635.0,  20.0,  "󰍛 s%%",  Trigger::TimePassed(5000)            ),
-    (Cmd::Cpu,                                1700.0,  20.0,  " s%%",  Trigger::TimePassed(5000)            ),
-];

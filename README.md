@@ -34,8 +34,7 @@ ssb
 
 ## Configuration
 
-The configuration file is located in ./ssb/src/config.rs. Ssb is supposed to be simple and minimalistic so configuration is done by editing the source code.
-After editing the configuration file, you need to rebuild the project and reinstall the binary.
+The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on first run.
 
 ## TODO
 - [ ] Add listener to volume change

@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use super::custom::new_command;
 use std::error::Error;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum RamOpts {
     Used,
     Free,
@@ -10,7 +12,7 @@ pub enum RamOpts {
 }
 
 pub fn memory_usage(opt: RamOpts) -> Result<String, Box<dyn Error>> {
-    let output = new_command("free", "-m")?;
+    let output = new_command("free -m")?;
     let output = output.split_whitespace().collect::<Vec<&str>>();
     let total = output[7].parse::<f64>()?;
     let used = output[8].parse::<f64>()?;

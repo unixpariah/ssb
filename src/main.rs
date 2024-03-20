@@ -3,11 +3,12 @@ mod modules;
 mod util;
 
 use cairo::{Context, ImageSurface};
-use config::{COMMAND_CONFIGS, CONFIG};
+use config::CONFIG;
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use modules::{
     backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
 };
+use serde::{Deserialize, Serialize};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -32,10 +33,10 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cmd {
-    Custom(&'static str, &'static str),
-    Workspaces(&'static str, &'static str),
+    Custom(String),
+    Workspaces(String),
     Backlight(BacklightOpts),
     Ram(RamOpts),
     Cpu,
@@ -108,23 +109,24 @@ impl StatusBar {
 
         let mut listeners = Listeners::new();
 
-        let information = COMMAND_CONFIGS
+        let information = CONFIG
+            .modules
             .iter()
-            .map(|(command, x, y, format, event)| {
-                let receiver = match event {
+            .map(|module| {
+                let receiver = match module.trigger.clone() {
                     Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
-                    Trigger::TimePassed(interval) => listeners.new_time_passed_listener(*interval),
-                    Trigger::FileChange(path) => listeners.new_file_change_listener(path),
+                    Trigger::TimePassed(interval) => listeners.new_time_passed_listener(interval),
+                    Trigger::FileChange(path) => listeners.new_file_change_listener(&path),
                 };
 
                 let receiver = Some(receiver);
 
                 StatusData {
                     output: String::new(),
-                    command: *command,
-                    x: *x,
-                    y: *y,
-                    format,
+                    command: module.command.clone(),
+                    x: module.x,
+                    y: module.y,
+                    format: module.format.as_str(),
                     receiver,
                     redraw: None,
                     cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
@@ -407,7 +409,6 @@ async fn setup_listeners(
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
-                // This will always be Some at this point
                 if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
                     let _ = sender.send(message);
                     let _ = listener.1.send(true);
@@ -459,7 +460,11 @@ async fn main() {
             skip = false;
             continue;
         }
-        status_bar.draw.recv().expect("Failed to receive");
+
+        status_bar
+            .draw
+            .recv()
+            .expect("Failed to receive draw message");
     }
 }
 
