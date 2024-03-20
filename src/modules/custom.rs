@@ -28,7 +28,7 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
     Ok(match command {
         Cmd::Custom(command, _, _) => new_command(command)?,
         Cmd::Workspaces(workspace) => hyprland::workspaces(workspace)?,
-        Cmd::Ram(opt, _, _) => memory_usage(*opt)?,
+        Cmd::Memory(opt, _, _) => memory_usage(*opt)?,
         Cmd::Backlight(opt, _) => backlight_details(*opt)?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_, _) => cpu_usage()?.split('.').next().ok_or("")?.into(),
         Cmd::Battery(opt, _, _) => battery_details(*opt)?,

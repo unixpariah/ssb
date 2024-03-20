@@ -124,7 +124,7 @@ command.Battery = ["Capacity", 5000, " s%%"]
 [[modules]]
 x = 1635.0
 y = 20.0
-command.Ram = ["PercUsed", 5000, "󰍛 s%%"]
+command.Memory = ["PercUsed", 5000, "󰍛 s%%"]
 
 # CPU Module
 

@@ -6,7 +6,7 @@ use crate::config::CONFIG;
 use cairo::{Context, ImageSurface};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use modules::{
-    backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::RamOpts,
+    backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::MemoryOpts,
 };
 use serde::{Deserialize, Serialize};
 use smithay_client_toolkit::{
@@ -38,7 +38,7 @@ pub enum Cmd {
     Custom(String, Trigger, String),
     Workspaces([String; 2]),
     Backlight(BacklightOpts, String),
-    Ram(RamOpts, u64, String),
+    Memory(MemoryOpts, u64, String),
     Cpu(u64, String),
     Battery(BatteryOpts, u64, String),
 }
@@ -115,7 +115,7 @@ impl StatusBar {
             .map(|module| {
                 let receiver = match &module.command {
                     Cmd::Workspaces(_) => listeners.new_workspace_listener(),
-                    Cmd::Ram(_, interval, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Memory(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Battery(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Backlight(_, _) => listeners.new_file_change_listener(
@@ -132,7 +132,7 @@ impl StatusBar {
 
                 let format = match &module.command {
                     Cmd::Workspaces(_) => "s%",
-                    Cmd::Ram(_, _, format) => format.as_str(),
+                    Cmd::Memory(_, _, format) => format.as_str(),
                     Cmd::Cpu(_, format) => format.as_str(),
                     Cmd::Battery(_, _, format) => format.as_str(),
                     Cmd::Backlight(_, format) => format.as_str(),

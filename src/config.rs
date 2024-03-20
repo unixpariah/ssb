@@ -1,5 +1,5 @@
 use crate::{
-    modules::{backlight::BacklightOpts, battery::BatteryOpts, memory::RamOpts},
+    modules::{backlight::BacklightOpts, battery::BatteryOpts, memory::MemoryOpts},
     util::{helpers::TOML, listeners::Trigger},
     Cmd,
 };
@@ -159,7 +159,7 @@ impl Module {
 
     pub fn memory() -> Self {
         Self {
-            command: Cmd::Ram(RamOpts::PercUsed, 5000, "󰍛 s%%".to_string()),
+            command: Cmd::Memory(MemoryOpts::PercUsed, 5000, "󰍛 s%%".to_string()),
             x: 1635.0,
             y: 20.0,
         }
