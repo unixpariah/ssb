@@ -16,17 +16,15 @@ Ssb is a simple status bar for wayland written in rust.
 git clone https://github.com/unixpariah/ssb
 ```
 
-2. Edit configuration in ./ssb/src/config.rs
+2. Install dependencies or use nix flake
 
-3. Install dependencies or use nix flake
-
-4. Build the project and install binary
+3. Build the project and install binary
 
 ```sh
 make install
 ```
 
-5. Run the binary
+4. Run the binary
 
 ```sh
 ssb
@@ -39,5 +37,3 @@ The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on f
 ## TODO
 - [ ] Add listener to volume change
 - [ ] Fix crashing when new output is added
-- [ ] Add proper configuration
-- [ ] (Maybe) add x11 support

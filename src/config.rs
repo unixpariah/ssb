@@ -18,11 +18,20 @@ lazy_static! {
 }
 
 fn get_config() -> Result<Config, Box<dyn crate::Error>> {
-    let config_dir = dirs::config_dir().ok_or("")?;
+    let config_dir = match dirs::config_dir() {
+        Some(dir) => dir,
+        None => {
+            eprintln!("Configuration directory not found");
+            return Ok(Config::default());
+        }
+    };
     let config_path = config_dir.join("ssb/config.toml");
 
     if !config_path.exists() {
-        println!("Configuration file not found, generating a new one.");
+        println!(
+            "Configuration file not found, generating a new one at: {:?}",
+            config_path
+        );
         let config = Config::default();
         let _ = fs::write(&config_path, toml::to_string(&config)?);
     }
