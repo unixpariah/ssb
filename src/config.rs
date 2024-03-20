@@ -1,6 +1,7 @@
 use std::fs;
 
 use crate::{util::listeners::Trigger, Cmd};
+use inotify::{Inotify, WatchMask};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
@@ -9,10 +10,17 @@ lazy_static! {
 }
 
 fn get_config() -> Config {
+    let inotify = Inotify::init().expect("Failed to setup inotify");
+
     let config_dir = dirs::config_dir().unwrap_or("".into());
     let config_path = config_dir.join("ssb/config.toml");
 
-    let file = fs::read_to_string(config_path.clone()).unwrap_or("".to_string());
+    inotify
+        .watches()
+        .add(&config_path, WatchMask::MODIFY)
+        .expect("Failed to add watch");
+
+    let file = fs::read_to_string(config_path).unwrap_or("".to_string());
     toml::from_str::<Config>(file.trim()).unwrap_or_default()
 }
 
@@ -44,28 +52,6 @@ pub struct Config {
     pub modules: Vec<Module>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Module {
-    pub command: Cmd,
-    pub x: f64,
-    pub y: f64,
-    #[serde(default = "format")]
-    pub format: String,
-    pub trigger: Trigger,
-}
-
-fn format() -> String {
-    "s%".to_string()
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Font {
-    pub family: String,
-    pub size: f64,
-    pub bold: bool,
-    pub color: [u8; 3],
-}
-
 fn unkown() -> String {
     "N/A".to_string()
 }
@@ -82,13 +68,66 @@ fn height() -> i32 {
     40
 }
 
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Module {
+    pub command: Cmd,
+    #[serde(default = "pos")]
+    pub x: f64,
+    #[serde(default = "pos")]
+    pub y: f64,
+    #[serde(default = "format")]
+    pub format: String,
+    #[serde(default = "trigger")]
+    pub trigger: Trigger,
+}
+
+fn pos() -> f64 {
+    0.0
+}
+
+fn trigger() -> Trigger {
+    Trigger::TimePassed(5000)
+}
+
+fn format() -> String {
+    "s%".to_string()
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Font {
+    #[serde(default = "family")]
+    pub family: String,
+    #[serde(default = "size")]
+    pub size: f64,
+    #[serde(default = "bold")]
+    pub bold: bool,
+    #[serde(default = "color")]
+    pub color: [u8; 3],
+}
+
+fn family() -> String {
+    "Arial".to_string()
+}
+
+fn size() -> f64 {
+    16.0
+}
+
+fn bold() -> bool {
+    false
+}
+
+fn color() -> [u8; 3] {
+    [255, 255, 255]
+}
+
 impl Default for Font {
     fn default() -> Self {
         Self {
-            family: "JetBrainsMono Nerd Font".to_string(),
-            size: 16.0,
-            bold: false,
-            color: [255, 255, 255],
+            family: family(),
+            size: size(),
+            bold: bold(),
+            color: color(),
         }
     }
 }

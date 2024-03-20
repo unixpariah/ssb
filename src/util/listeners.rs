@@ -86,55 +86,57 @@ impl Listeners {
         let file_change_listener = Arc::clone(&self.file_change_listener);
         let workspace_listener = Arc::clone(&self.workspace_listener);
 
-        if time_passed_listener.lock().unwrap().is_empty() {
-            return;
-        }
-
         // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
         // to the listeners whose interval has passed and resets the interval in a loop
-        thread::spawn(move || {
-            if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
-                loop {
-                    time_passed_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
-                    let min_interval = time_passed_listener[0].interval;
-                    thread::sleep(std::time::Duration::from_millis(min_interval));
-                    for data in time_passed_listener.iter_mut() {
-                        if data.interval <= min_interval {
-                            let _ = data.tx.send(true);
-                            data.interval = data.original_interval;
-                        } else {
-                            data.interval -= min_interval;
+        if !time_passed_listener.lock().unwrap().is_empty() {
+            thread::spawn(move || {
+                if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
+                    loop {
+                        time_passed_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
+                        let min_interval = time_passed_listener[0].interval;
+                        thread::sleep(std::time::Duration::from_millis(min_interval));
+                        for data in time_passed_listener.iter_mut() {
+                            if data.interval <= min_interval {
+                                let _ = data.tx.send(true);
+                                data.interval = data.original_interval;
+                            } else {
+                                data.interval -= min_interval;
+                            }
                         }
                     }
                 }
-            }
-        });
+            });
+        }
 
-        thread::spawn(move || {
-            if let Ok(mut file_change_listener) = file_change_listener.lock() {
-                loop {
-                    let mut buffer = [0; 1024];
-                    if let Some(file_change_listener) = file_change_listener.as_mut() {
-                        let events = file_change_listener
-                            .inotify
-                            .read_events_blocking(&mut buffer)
-                            .expect("Failed to read events");
+        if file_change_listener.lock().unwrap().is_some() {
+            thread::spawn(move || {
+                if let Ok(mut file_change_listener) = file_change_listener.lock() {
+                    loop {
+                        let mut buffer = [0; 1024];
+                        if let Some(file_change_listener) = file_change_listener.as_mut() {
+                            let events = file_change_listener
+                                .inotify
+                                .read_events_blocking(&mut buffer)
+                                .expect("Failed to read events");
 
-                        events.for_each(|_| {
-                            let _ = file_change_listener.tx.send(true);
-                        });
+                            events.for_each(|_| {
+                                let _ = file_change_listener.tx.send(true);
+                            });
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
 
-        thread::spawn(move || {
-            if let Ok(mut workspace_listener) = workspace_listener.lock() {
-                if let Some(listener) = workspace_listener.as_mut() {
-                    let _ = listener.listener.start_listener();
+        if workspace_listener.lock().unwrap().is_some() {
+            thread::spawn(move || {
+                if let Ok(mut workspace_listener) = workspace_listener.lock() {
+                    if let Some(listener) = workspace_listener.as_mut() {
+                        let _ = listener.listener.start_listener();
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     pub fn new_time_passed_listener(&mut self, interval: u64) -> broadcast::Receiver<bool> {
