@@ -2,7 +2,7 @@ use super::{
     backlight::backlight_details, battery::battery_details, cpu_usage::cpu_usage, hyprland,
     memory::memory_usage,
 };
-use crate::{Cmd, CONFIG};
+use crate::{config::CONFIG, Cmd};
 use std::{error::Error, process::Command};
 
 pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
@@ -26,11 +26,11 @@ pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
 
 pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
     Ok(match command {
-        Cmd::Custom(command) => new_command(command)?,
+        Cmd::Custom(command, _, _) => new_command(command)?,
         Cmd::Workspaces(workspace) => hyprland::workspaces(workspace)?,
-        Cmd::Ram(opt) => memory_usage(*opt)?,
-        Cmd::Backlight(opt) => backlight_details(*opt)?.split('.').next().ok_or("")?.into(),
-        Cmd::Cpu => cpu_usage()?.split('.').next().ok_or("")?.into(),
-        Cmd::Battery(opt) => battery_details(*opt)?,
+        Cmd::Ram(opt, _, _) => memory_usage(*opt)?,
+        Cmd::Backlight(opt, _) => backlight_details(*opt)?.split('.').next().ok_or("")?.into(),
+        Cmd::Cpu(_, _) => cpu_usage()?.split('.').next().ok_or("")?.into(),
+        Cmd::Battery(opt, _, _) => battery_details(*opt)?,
     })
 }

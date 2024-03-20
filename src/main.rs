@@ -21,7 +21,7 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{collections::HashMap, error::Error, sync::mpsc};
+use std::{collections::HashMap, error::Error, path::PathBuf, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
     helpers::{set_background_context, set_info_context},
@@ -35,12 +35,12 @@ use wayland_client::{
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cmd {
-    Custom(String),
+    Custom(String, Trigger, String),
     Workspaces([String; 2]),
-    Backlight(BacklightOpts),
-    Ram(RamOpts),
-    Cpu,
-    Battery(BatteryOpts),
+    Backlight(BacklightOpts, String),
+    Ram(RamOpts, u64, String),
+    Cpu(u64, String),
+    Battery(BatteryOpts, u64, String),
 }
 
 #[derive(Debug)]
@@ -113,10 +113,30 @@ impl StatusBar {
             .modules
             .iter()
             .map(|module| {
-                let receiver = match module.trigger.clone() {
-                    Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
-                    Trigger::TimePassed(interval) => listeners.new_time_passed_listener(interval),
-                    Trigger::FileChange(path) => listeners.new_file_change_listener(&path),
+                let receiver = match &module.command {
+                    Cmd::Workspaces(_) => listeners.new_workspace_listener(),
+                    Cmd::Ram(_, interval, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Battery(_, interval, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Backlight(_, _) => {
+                        listeners.new_file_change_listener(&PathBuf::from("/sys/class/backlight"))
+                    }
+                    Cmd::Custom(_, trigger, _) => match trigger {
+                        Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
+                        Trigger::TimePassed(interval) => {
+                            listeners.new_time_passed_listener(*interval)
+                        }
+                        Trigger::FileChange(path) => listeners.new_file_change_listener(path),
+                    },
+                };
+
+                let format = match &module.command {
+                    Cmd::Workspaces(_) => "s%",
+                    Cmd::Ram(_, _, format) => format.as_str(),
+                    Cmd::Cpu(_, format) => format.as_str(),
+                    Cmd::Battery(_, _, format) => format.as_str(),
+                    Cmd::Backlight(_, format) => format.as_str(),
+                    Cmd::Custom(_, _, format) => format.as_str(),
                 };
 
                 let receiver = Some(receiver);
@@ -126,7 +146,7 @@ impl StatusBar {
                     command: module.command.clone(),
                     x: module.x,
                     y: module.y,
-                    format: module.format.as_str(),
+                    format,
                     receiver,
                     redraw: None,
                     cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),

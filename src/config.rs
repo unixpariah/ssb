@@ -1,6 +1,6 @@
 use crate::{
     modules::{backlight::BacklightOpts, battery::BatteryOpts, memory::RamOpts},
-    util::listeners::Trigger,
+    util::{helpers::TOML, listeners::Trigger},
     Cmd,
 };
 use lazy_static::lazy_static;
@@ -17,7 +17,7 @@ lazy_static! {
     };
 }
 
-fn get_config() -> Result<Config, Box<dyn crate::Error>> {
+pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
         Some(dir) => dir,
         None => {
@@ -32,8 +32,7 @@ fn get_config() -> Result<Config, Box<dyn crate::Error>> {
             "Configuration file not found, generating a new one at: {:?}",
             config_path
         );
-        let config = Config::default();
-        let _ = fs::write(&config_path, toml::to_string(&config)?);
+        let _ = fs::write(&config_path, TOML);
     }
 
     let file = fs::read_to_string(&config_path)?;
@@ -103,10 +102,6 @@ pub struct Module {
     pub x: f64,
     #[serde(default = "pos")]
     pub y: f64,
-    #[serde(default = "format")]
-    pub format: String,
-    #[serde(default = "trigger")]
-    pub trigger: Trigger,
 }
 
 impl Module {
@@ -115,92 +110,80 @@ impl Module {
             command: Cmd::Workspaces([" ".to_string(), " ".to_string()]),
             x: 35.0,
             y: 20.0,
-            format: "s%".to_string(),
-            trigger: Trigger::WorkspaceChanged,
         }
     }
 
     pub fn battery() -> Self {
         Self {
-            command: Cmd::Battery(BatteryOpts::Capacity),
+            command: Cmd::Battery(BatteryOpts::Capacity, 5000, " s%%".to_string()),
             x: 1390.0,
             y: 20.0,
-            format: " s%%".to_string(),
-            trigger: Trigger::TimePassed(5000),
         }
     }
 
     pub fn date() -> Self {
         Self {
-            command: Cmd::Custom("date +%H:%M".to_string()),
+            command: Cmd::Custom(
+                "date +%H:%M".to_string(),
+                Trigger::TimePassed(60000),
+                " s%".to_string(),
+            ),
             x: 925.0,
             y: 20.0,
-            format: " s%".to_string(),
-            trigger: Trigger::TimePassed(60000),
         }
     }
 
     pub fn wifi() -> Self {
         Self {
-            command: Cmd::Custom("iwgetid -r".to_string()),
+            command: Cmd::Custom(
+                "iwgetid -r".to_string(),
+                Trigger::TimePassed(10000),
+                "  s%".to_string(),
+            ),
             x: 1775.0,
             y: 20.0,
-            format: "  s%".to_string(),
-            trigger: Trigger::TimePassed(60000),
         }
     }
 
     pub fn volume() -> Self {
         Self {
-            command: Cmd::Custom("pamixer --get-volume".to_string()),
+            command: Cmd::Custom(
+                "pamixer --get-volume".to_string(),
+                Trigger::TimePassed(1000),
+                " s%%".to_string(),
+            ),
             x: 1540.0,
             y: 20.0,
-            format: " s%%".to_string(),
-            trigger: Trigger::TimePassed(1000),
         }
     }
 
     pub fn memory() -> Self {
         Self {
-            command: Cmd::Ram(RamOpts::PercUsed),
+            command: Cmd::Ram(RamOpts::PercUsed, 5000, "󰍛 s%%".to_string()),
             x: 1635.0,
             y: 20.0,
-            format: "󰍛 s%%".to_string(),
-            trigger: Trigger::TimePassed(5000),
         }
     }
 
     pub fn cpu() -> Self {
         Self {
-            command: Cmd::Cpu,
+            command: Cmd::Cpu(5000, " s%%".to_string()),
             x: 1700.0,
             y: 20.0,
-            format: " s%%".to_string(),
-            trigger: Trigger::TimePassed(5000),
         }
     }
 
     pub fn backlight() -> Self {
         Self {
-            command: Cmd::Backlight(BacklightOpts::Perc),
+            command: Cmd::Backlight(BacklightOpts::Perc, "󰖨 s%%".to_string()),
             x: 1475.0,
             y: 20.0,
-            format: "󰖨 s%%".to_string(),
-            trigger: Trigger::TimePassed(5000),
         }
     }
 }
 
 fn pos() -> f64 {
     0.0
-}
-
-fn trigger() -> Trigger {
-    Trigger::TimePassed(5000)
-}
-
-fn format() -> String {
-    "s%".to_string()
 }
 
 #[derive(Deserialize, Serialize, Debug)]
