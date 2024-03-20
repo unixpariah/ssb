@@ -36,7 +36,7 @@ use wayland_client::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cmd {
     Custom(String),
-    Workspaces(String),
+    Workspaces([String; 2]),
     Backlight(BacklightOpts),
     Ram(RamOpts),
     Cpu,

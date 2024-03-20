@@ -49,8 +49,13 @@ pub struct Module {
     pub command: Cmd,
     pub x: f64,
     pub y: f64,
+    #[serde(default = "format")]
     pub format: String,
     pub trigger: Trigger,
+}
+
+fn format() -> String {
+    "s%".to_string()
 }
 
 #[derive(Deserialize, Serialize, Debug)]
