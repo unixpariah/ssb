@@ -12,7 +12,7 @@ inotify = "0.10.2"
 lazy_static = "1.4.0"
 serde = { version = "1.0.197", features = ["derive"] }
 smithay-client-toolkit = { version = "0.18.1", default-features = false }
-sysinfo = "0.30.7"
+sysinfo = { version = "0.30.7", default-features = false }
 tokio = { version = "1.36.0", features = ["sync"] }
 toml = "0.8.12"
 wayland-client = "0.31.2"

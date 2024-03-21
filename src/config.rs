@@ -1,8 +1,4 @@
-use crate::{
-    modules::{backlight::BacklightOpts, battery::BatteryOpts, memory::MemoryOpts},
-    util::{helpers::TOML, listeners::Trigger},
-    Cmd,
-};
+use crate::{util::helpers::TOML, Cmd};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -12,7 +8,7 @@ lazy_static! {
         Ok(config) => config,
         Err(_) => {
             eprintln!("Error while parsing configuration file, using default one");
-            Config::default()
+            toml::from_str(TOML).unwrap()
         }
     };
 }
@@ -22,15 +18,15 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
         Some(dir) => dir,
         None => {
             eprintln!("Configuration directory not found");
-            return Ok(Config::default());
+            toml::from_str(TOML).unwrap()
         }
     };
     let config_path = config_dir.join("ssb/config.toml");
 
     if !config_path.exists() {
         println!(
-            "Configuration file not found, generating a new one at: {:?}",
-            config_path
+            "Configuration file not found, generating a new one at: {}",
+            config_path.display()
         );
         let _ = fs::write(&config_path, TOML);
     }
@@ -38,30 +34,6 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
     let file = fs::read_to_string(&config_path)?;
 
     Ok(toml::from_str::<Config>(file.trim())?)
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        let modules = vec![
-            Module::workspace(),
-            Module::battery(),
-            Module::date(),
-            Module::wifi(),
-            Module::volume(),
-            Module::memory(),
-            Module::cpu(),
-            Module::backlight(),
-        ];
-
-        Self {
-            unkown: unkown(),
-            background: background(),
-            topbar: topbar(),
-            height: height(),
-            font: Font::default(),
-            modules,
-        }
-    }
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -102,84 +74,6 @@ pub struct Module {
     pub x: f64,
     #[serde(default = "pos")]
     pub y: f64,
-}
-
-impl Module {
-    pub fn workspace() -> Self {
-        Self {
-            command: Cmd::Workspaces([" ".to_string(), " ".to_string()]),
-            x: 35.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn battery() -> Self {
-        Self {
-            command: Cmd::Battery(BatteryOpts::Capacity, 5000, " s%%".to_string()),
-            x: 1390.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn date() -> Self {
-        Self {
-            command: Cmd::Custom(
-                "date +%H:%M".to_string(),
-                Trigger::TimePassed(60000),
-                " s%".to_string(),
-            ),
-            x: 925.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn wifi() -> Self {
-        Self {
-            command: Cmd::Custom(
-                "iwgetid -r".to_string(),
-                Trigger::TimePassed(10000),
-                "  s%".to_string(),
-            ),
-            x: 1775.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn volume() -> Self {
-        Self {
-            command: Cmd::Custom(
-                "pamixer --get-volume".to_string(),
-                Trigger::TimePassed(1000),
-                " s%%".to_string(),
-            ),
-            x: 1540.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn memory() -> Self {
-        Self {
-            command: Cmd::Memory(MemoryOpts::PercUsed, 5000, "󰍛 s%%".to_string()),
-            x: 1635.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn cpu() -> Self {
-        Self {
-            command: Cmd::Cpu(5000, " s%%".to_string()),
-            x: 1700.0,
-            y: 20.0,
-        }
-    }
-
-    pub fn backlight() -> Self {
-        Self {
-            command: Cmd::Backlight(BacklightOpts::Perc, "󰖨 s%%".to_string()),
-            x: 1475.0,
-            y: 20.0,
-        }
-    }
 }
 
 fn pos() -> f64 {
