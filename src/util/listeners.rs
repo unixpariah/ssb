@@ -148,7 +148,7 @@ impl Listeners {
             original_interval: interval,
         };
 
-        let time_passed_listener = Arc::clone(&self.time_passed_listener);
+        let time_passed_listener = &self.time_passed_listener;
         if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
             time_passed_listener.push(data);
         }

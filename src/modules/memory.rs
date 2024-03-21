@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
+use sysinfo::System;
 
-use super::custom::new_command;
 use std::error::Error;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -12,14 +12,15 @@ pub enum MemoryOpts {
 }
 
 pub fn memory_usage(opt: MemoryOpts) -> Result<String, Box<dyn Error>> {
-    let output = new_command("free -m")?;
-    let output = output.split_whitespace().collect::<Vec<&str>>();
-    let total = output[7].parse::<f64>()?;
-    let used = output[8].parse::<f64>()?;
+    let mut system = System::new();
+    system.refresh_memory();
+    let free = system.free_memory() as f64;
+    let used = system.used_memory() as f64;
+    let total = free + used;
 
     let output = match opt {
         MemoryOpts::PercUsed => (used / total) * 100.0,
-        MemoryOpts::PercFree => ((total - used) / total) * 100.0,
+        MemoryOpts::PercFree => (free / total) * 100.0,
         MemoryOpts::Used => used,
         MemoryOpts::Free => total - used,
     }

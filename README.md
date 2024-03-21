@@ -1,4 +1,4 @@
-# ssb - Simple and hacky status bar
+# ssb - Simple status bar
 
 Ssb is a simple status bar for wayland written in rust.
 

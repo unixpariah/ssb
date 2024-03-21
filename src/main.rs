@@ -72,7 +72,7 @@ impl ImgCache {
 
 pub struct StatusData {
     output: String,
-    command: Cmd,
+    command: &'static Cmd,
     x: f64,
     y: f64,
     format: &'static str,
@@ -102,9 +102,7 @@ impl StatusBar {
     ) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
-        let layer_shell = LayerShell::bind(globals, qh).expect(
-            "Failed to bind layer shell, check if the compositor supports layer shell protocol.",
-        );
+        let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
         let mut listeners = Listeners::new();
@@ -143,7 +141,7 @@ impl StatusBar {
 
                 StatusData {
                     output: String::new(),
-                    command: module.command.clone(),
+                    command: &module.command,
                     x: module.x,
                     y: module.y,
                     format,
@@ -198,7 +196,7 @@ impl StatusBar {
                 if let Some(redraw) = &info.redraw {
                     if redraw.try_recv().is_ok() || info.output.is_empty() {
                         let output =
-                            get_command_output(&info.command).unwrap_or(CONFIG.unkown.to_string());
+                            get_command_output(info.command).unwrap_or(CONFIG.unkown.to_string());
 
                         if output != info.output {
                             let format = info.format.replace("s%", &output);
@@ -425,7 +423,7 @@ async fn setup_listeners(
     listeners: Vec<(Option<broadcast::Receiver<bool>>, mpsc::Sender<bool>)>,
     sender: mpsc::Sender<bool>,
 ) {
-    for mut listener in listeners {
+    listeners.into_iter().for_each(|mut listener| {
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
@@ -435,7 +433,7 @@ async fn setup_listeners(
                 };
             }
         });
-    }
+    })
 }
 
 #[tokio::main]
