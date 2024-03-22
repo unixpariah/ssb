@@ -1,4 +1,4 @@
-use hyprland::event_listener::EventListener;
+use hyprland::{event_listener::EventListener, shared::HyprDataActive};
 use inotify::{Inotify, WatchMask};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -15,9 +15,13 @@ pub enum Trigger {
     FileChange(PathBuf),
 }
 
+pub enum WorkspaceListener {
+    Hyprland(EventListener),
+}
+
 pub struct WorkspaceListenerData {
     tx: broadcast::Sender<bool>,
-    listener: EventListener,
+    listener: WorkspaceListener,
 }
 
 pub struct TimeListenerData {
@@ -51,30 +55,37 @@ impl Listeners {
             return workspace_listener.tx.subscribe();
         }
 
-        let mut listener = EventListener::new();
+        let listener;
 
         let (tx, rx) = broadcast::channel(1);
 
-        {
-            let tx = tx.clone();
-            listener.add_workspace_destroy_handler(move |_| {
-                _ = tx.send(true);
-            });
-        }
+        listener = if hyprland::data::Workspace::get_active().is_ok() {
+            let mut listener = EventListener::new();
+            {
+                let tx = tx.clone();
+                listener.add_workspace_destroy_handler(move |_| {
+                    _ = tx.send(true);
+                });
+            }
 
-        {
-            let tx = tx.clone();
-            listener.add_workspace_change_handler(move |_| {
-                _ = tx.send(true);
-            });
-        }
+            {
+                let tx = tx.clone();
+                listener.add_workspace_change_handler(move |_| {
+                    _ = tx.send(true);
+                });
+            }
 
-        {
-            let tx = tx.clone();
-            listener.add_active_monitor_change_handler(move |_| {
-                _ = tx.send(true);
-            });
-        }
+            {
+                let tx = tx.clone();
+                listener.add_active_monitor_change_handler(move |_| {
+                    _ = tx.send(true);
+                });
+            }
+
+            WorkspaceListener::Hyprland(listener)
+        } else {
+            return rx;
+        };
 
         self.workspace_listener =
             Arc::new(Mutex::new(Some(WorkspaceListenerData { tx, listener })));
@@ -132,7 +143,11 @@ impl Listeners {
             thread::spawn(move || {
                 if let Ok(mut workspace_listener) = workspace_listener.lock() {
                     if let Some(listener) = workspace_listener.as_mut() {
-                        _ = listener.listener.start_listener();
+                        match &mut listener.listener {
+                            WorkspaceListener::Hyprland(listener) => {
+                                let _ = listener.start_listener();
+                            }
+                        }
                     }
                 }
             });

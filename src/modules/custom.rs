@@ -1,8 +1,8 @@
 use log::warn;
 
 use super::{
-    backlight::backlight_details, battery::battery_details, cpu::usage, hyprland,
-    memory::memory_usage,
+    backlight::backlight_details, battery::battery_details, cpu::usage, memory::memory_usage,
+    workspaces::workspaces,
 };
 use crate::{config::CONFIG, Cmd};
 use std::{error::Error, process::Command};
@@ -31,7 +31,7 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
                 CONFIG.unkown.clone()
             }
         },
-        Cmd::HyprlandWorkspaces(workspace) => hyprland::workspaces(workspace)?,
+        Cmd::Workspaces(workspace) => workspaces(workspace)?,
         Cmd::Memory(opt, _, _) => memory_usage(*opt)?,
         Cmd::Backlight(_, _) => backlight_details()?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_, _) => usage()?.split('.').next().ok_or("")?.into(),

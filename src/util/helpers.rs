@@ -105,7 +105,7 @@ color = [255, 255, 255]
 [[modules]]
 x = 35.0
 y = 20.0
-command.HyprlandWorkspaces = [" ", " "]
+command.Workspaces = [" ", " "]
 
 # Battery Module
 

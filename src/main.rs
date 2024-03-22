@@ -36,7 +36,7 @@ use wayland_client::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cmd {
     Custom(String, Trigger, String),
-    HyprlandWorkspaces([String; 2]),
+    Workspaces([String; 2]),
     Backlight(String, Option<Vec<String>>),
     Memory(MemoryOpts, u64, String),
     Audio(u64, String, Option<Vec<String>>),
@@ -113,7 +113,7 @@ impl StatusBar {
             .iter()
             .map(|module| {
                 let receiver = match &module.command {
-                    Cmd::HyprlandWorkspaces(_) => listeners.new_workspace_listener(),
+                    Cmd::Workspaces(_) => listeners.new_workspace_listener(),
                     Cmd::Memory(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Battery(interval, _, _) => listeners.new_time_passed_listener(*interval),
@@ -131,7 +131,7 @@ impl StatusBar {
                 };
 
                 let format = match &module.command {
-                    Cmd::HyprlandWorkspaces(_) => "%s",
+                    Cmd::Workspaces(_) => "%s",
                     Cmd::Memory(_, _, format) => format,
                     Cmd::Cpu(_, format) => format,
                     Cmd::Battery(_, format, _) => format,
@@ -209,11 +209,14 @@ impl StatusBar {
                                 | Cmd::Audio(_, _, Some(icons))
                                     if !icons.is_empty() =>
                                 {
-                                    let o = output.parse::<usize>().unwrap();
-                                    let range_size = 100 / icons.len();
-                                    let icon =
-                                        &icons[std::cmp::min(o / range_size, icons.len() - 1)];
-                                    format.replace("%c", icon)
+                                    if let Ok(output) = output.parse::<usize>() {
+                                        let range_size = 100 / icons.len();
+                                        let icon = &icons
+                                            [std::cmp::min(output / range_size, icons.len() - 1)];
+                                        format.replace("%c", icon)
+                                    } else {
+                                        format.replace("%c", " ")
+                                    }
                                 }
                                 _ => format,
                             };
@@ -347,17 +350,17 @@ impl OutputHandler for StatusBar {
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);
 
-                let background = image::load_from_memory(&background).unwrap();
+                if let Ok(background) = image::load_from_memory(&background) {
+                    info!("Bar configured for output: {:?}", info.name.unwrap());
 
-                info!("Bar configured for output: {:?}", info.name.unwrap());
-
-                self.surfaces.push(Surface {
-                    output_id: info.id,
-                    layer_surface: layer,
-                    width,
-                    configured: false,
-                    background,
-                });
+                    self.surfaces.push(Surface {
+                        output_id: info.id,
+                        layer_surface: layer,
+                        width,
+                        configured: false,
+                        background,
+                    });
+                }
             }
         }
     }

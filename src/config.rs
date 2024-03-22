@@ -29,7 +29,7 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
             "Configuration file not found, generating new one at: {}",
             config_path.display()
         );
-        fs::create_dir_all(config_path.parent().unwrap())?;
+        fs::create_dir_all(config_path.parent().ok_or("")?)?;
         _ = fs::write(&config_path, TOML);
     }
 
