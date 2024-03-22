@@ -465,7 +465,8 @@ async fn setup_listeners(
 
 #[tokio::main]
 async fn main() {
-    log_init();
+    logger();
+
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -527,7 +528,7 @@ impl ProvidesRegistryState for StatusBar {
     registry_handlers![OutputState];
 }
 
-fn log_init() {
+fn logger() {
     let config = simplelog::ConfigBuilder::new()
         .set_thread_level(LevelFilter::Error)
         .set_thread_mode(ThreadLogMode::Both)

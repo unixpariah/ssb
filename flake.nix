@@ -26,6 +26,8 @@
             rustfmt
             rust-analyzer
             clippy
+            libpulseaudio
+            pulseaudio
           ];
         };
       in {
