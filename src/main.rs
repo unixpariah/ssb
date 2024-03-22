@@ -5,10 +5,10 @@ mod util;
 use crate::config::CONFIG;
 use cairo::{Context, ImageSurface};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
-use modules::{
-    backlight::BacklightOpts, battery::BatteryOpts, custom::get_command_output, memory::MemoryOpts,
-};
+use log::{info, LevelFilter};
+use modules::{custom::get_command_output, memory::MemoryOpts};
 use serde::{Deserialize, Serialize};
+use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
@@ -36,11 +36,12 @@ use wayland_client::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cmd {
     Custom(String, Trigger, String),
-    Workspaces([String; 2]),
-    Backlight(BacklightOpts, String),
+    HyprlandWorkspaces([String; 2]),
+    Backlight(String, Option<Vec<String>>),
     Memory(MemoryOpts, u64, String),
+    Audio(u64, String, Option<Vec<String>>),
     Cpu(u64, String),
-    Battery(BatteryOpts, u64, String),
+    Battery(u64, String, Option<Vec<String>>),
 }
 
 #[derive(Debug)]
@@ -112,13 +113,14 @@ impl StatusBar {
             .iter()
             .map(|module| {
                 let receiver = match &module.command {
-                    Cmd::Workspaces(_) => listeners.new_workspace_listener(),
+                    Cmd::HyprlandWorkspaces(_) => listeners.new_workspace_listener(),
                     Cmd::Memory(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Battery(_, interval, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Battery(interval, _, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Backlight(_, _) => listeners.new_file_change_listener(
                         &get_backlight_path().expect("Backlight not found"),
                     ),
+                    Cmd::Audio(interval, _, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Custom(_, trigger, _) => match trigger {
                         Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                         Trigger::TimePassed(interval) => {
@@ -129,12 +131,13 @@ impl StatusBar {
                 };
 
                 let format = match &module.command {
-                    Cmd::Workspaces(_) => "s%",
-                    Cmd::Memory(_, _, format) => format.as_str(),
-                    Cmd::Cpu(_, format) => format.as_str(),
-                    Cmd::Battery(_, _, format) => format.as_str(),
-                    Cmd::Backlight(_, format) => format.as_str(),
-                    Cmd::Custom(_, _, format) => format.as_str(),
+                    Cmd::HyprlandWorkspaces(_) => "%s",
+                    Cmd::Memory(_, _, format) => format,
+                    Cmd::Cpu(_, format) => format,
+                    Cmd::Battery(_, format, _) => format,
+                    Cmd::Backlight(format, _) => format,
+                    Cmd::Custom(_, _, format) => format,
+                    Cmd::Audio(_, format, _) => format,
                 };
 
                 let receiver = Some(receiver);
@@ -199,7 +202,21 @@ impl StatusBar {
                             get_command_output(info.command).unwrap_or(CONFIG.unkown.to_string());
 
                         if output != info.output {
-                            let format = info.format.replace("s%", &output);
+                            let format = info.format.replace("%s", &output);
+                            let format = match info.command {
+                                Cmd::Battery(_, _, Some(icons))
+                                | Cmd::Backlight(_, Some(icons))
+                                | Cmd::Audio(_, _, Some(icons))
+                                    if !icons.is_empty() =>
+                                {
+                                    let o = output.parse::<usize>().unwrap();
+                                    let range_size = 100 / icons.len();
+                                    let icon =
+                                        &icons[std::cmp::min(o / range_size, icons.len() - 1)];
+                                    format.replace("%c", icon)
+                                }
+                                _ => format,
+                            };
                             let extents = context.text_extents(&format).unwrap();
 
                             let width = if extents.width() as i32 > info.cache.width {
@@ -219,10 +236,10 @@ impl StatusBar {
                             let context = cairo::Context::new(&surface).unwrap();
                             set_info_context(&context, extents);
 
-                            let _ = context.show_text(&format);
+                            _ = context.show_text(&format);
 
                             let mut img = Vec::new();
-                            let _ = surface.write_to_png(&mut img);
+                            _ = surface.write_to_png(&mut img);
 
                             if let Ok(img) = image::load_from_memory(&img) {
                                 info.cache = ImgCache::new(img, width, height, false);
@@ -328,9 +345,11 @@ impl OutputHandler for StatusBar {
                 set_background_context(&context);
 
                 let mut background = Vec::new();
-                let _ = img_surface.write_to_png(&mut background);
+                _ = img_surface.write_to_png(&mut background);
 
                 let background = image::load_from_memory(&background).unwrap();
+
+                info!("Bar configured for output: {:?}", info.name.unwrap());
 
                 self.surfaces.push(Surface {
                     output_id: info.id,
@@ -358,8 +377,13 @@ impl OutputHandler for StatusBar {
         output: wl_output::WlOutput,
     ) {
         if let Some(output_info) = self.output_state.info(&output) {
-            self.surfaces
-                .retain(|info| info.output_id != output_info.id);
+            self.surfaces.retain(|info| {
+                info!(
+                    "Removing bar from output: {:?}",
+                    output_info.to_owned().name.unwrap()
+                );
+                info.output_id != output_info.id
+            });
         }
     }
 }
@@ -428,8 +452,8 @@ async fn setup_listeners(
         tokio::spawn(async move {
             loop {
                 if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
-                    let _ = sender.send(message);
-                    let _ = listener.1.send(true);
+                    _ = sender.send(message);
+                    _ = listener.1.send(true);
                 };
             }
         });
@@ -438,6 +462,7 @@ async fn setup_listeners(
 
 #[tokio::main]
 async fn main() {
+    log_init();
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
@@ -497,4 +522,19 @@ impl ProvidesRegistryState for StatusBar {
         &mut self.registry_state
     }
     registry_handlers![OutputState];
+}
+
+fn log_init() {
+    let config = simplelog::ConfigBuilder::new()
+        .set_thread_level(LevelFilter::Error)
+        .set_thread_mode(ThreadLogMode::Both)
+        .build();
+
+    TermLogger::init(
+        LevelFilter::Info,
+        config,
+        TerminalMode::Stderr,
+        ColorChoice::AlwaysAnsi,
+    )
+    .expect("Failed to initialize logger");
 }

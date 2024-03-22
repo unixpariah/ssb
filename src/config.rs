@@ -1,5 +1,6 @@
 use crate::{util::helpers::TOML, Cmd};
 use lazy_static::lazy_static;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -7,7 +8,7 @@ lazy_static! {
     pub static ref CONFIG: Config = match get_config() {
         Ok(config) => config,
         Err(_) => {
-            eprintln!("Error while parsing configuration file, using default one");
+            warn!("Error while parsing configuration file, using default configuration");
             toml::from_str(TOML).unwrap()
         }
     };
@@ -17,18 +18,19 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
         Some(dir) => dir,
         None => {
-            eprintln!("Configuration directory not found");
+            warn!("Configuration directory not found, using default configuration");
             toml::from_str(TOML).unwrap()
         }
     };
     let config_path = config_dir.join("ssb/config.toml");
 
     if !config_path.exists() {
-        println!(
-            "Configuration file not found, generating a new one at: {}",
+        info!(
+            "Configuration file not found, generating new one at: {}",
             config_path.display()
         );
-        let _ = fs::write(&config_path, TOML);
+        fs::create_dir_all(config_path.parent().unwrap())?;
+        _ = fs::write(&config_path, TOML);
     }
 
     let file = fs::read_to_string(&config_path)?;

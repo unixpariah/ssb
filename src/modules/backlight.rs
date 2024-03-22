@@ -10,7 +10,7 @@ pub enum BacklightOpts {
     Value,
 }
 
-pub fn backlight_details(opts: BacklightOpts) -> Result<String, Box<dyn Error>> {
+pub fn backlight_details() -> Result<String, Box<dyn Error>> {
     let path = get_backlight_path()?;
 
     let brightness = std::fs::read_to_string(path.join("brightness"))?
@@ -20,8 +20,5 @@ pub fn backlight_details(opts: BacklightOpts) -> Result<String, Box<dyn Error>> 
         .trim()
         .parse::<f32>()?;
 
-    match opts {
-        BacklightOpts::Perc => Ok(((brightness / max_brightness) * 100.0).to_string()),
-        BacklightOpts::Value => Ok(brightness.to_string()),
-    }
+    Ok(((brightness / max_brightness) * 100.0).to_string())
 }

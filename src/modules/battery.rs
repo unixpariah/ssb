@@ -8,12 +8,12 @@ pub enum BatteryOpts {
     Status,
 }
 
-pub fn battery_details(opts: BatteryOpts) -> Result<String, Box<dyn Error>> {
+pub fn battery_details() -> Result<String, Box<dyn Error>> {
     let mut dirs = std::fs::read_dir("/sys/class/power_supply")?;
     let path = dirs
         .find(|entry| {
             let entry = entry.as_ref().unwrap().path();
-            if entry.join("capacity").exists() && entry.join("status").exists() {
+            if entry.join("capacity").exists() {
                 return true;
             }
 
@@ -24,12 +24,6 @@ pub fn battery_details(opts: BatteryOpts) -> Result<String, Box<dyn Error>> {
     let capacity = std::fs::read_to_string(path.path().join("capacity"))?
         .trim()
         .to_string();
-    let status = std::fs::read_to_string(path.path().join("status"))?
-        .trim()
-        .to_string();
 
-    match opts {
-        BatteryOpts::Capacity => Ok(capacity),
-        BatteryOpts::Status => Ok(status),
-    }
+    Ok(capacity)
 }

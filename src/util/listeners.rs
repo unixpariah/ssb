@@ -58,21 +58,21 @@ impl Listeners {
         {
             let tx = tx.clone();
             listener.add_workspace_destroy_handler(move |_| {
-                let _ = tx.send(true);
+                _ = tx.send(true);
             });
         }
 
         {
             let tx = tx.clone();
             listener.add_workspace_change_handler(move |_| {
-                let _ = tx.send(true);
+                _ = tx.send(true);
             });
         }
 
         {
             let tx = tx.clone();
             listener.add_active_monitor_change_handler(move |_| {
-                let _ = tx.send(true);
+                _ = tx.send(true);
             });
         }
 
@@ -97,7 +97,7 @@ impl Listeners {
                         thread::sleep(std::time::Duration::from_millis(min_interval));
                         for data in time_passed_listener.iter_mut() {
                             if data.interval <= min_interval {
-                                let _ = data.tx.send(true);
+                                _ = data.tx.send(true);
                                 data.interval = data.original_interval;
                             } else {
                                 data.interval -= min_interval;
@@ -120,7 +120,7 @@ impl Listeners {
                                 .expect("Failed to read events");
 
                             events.for_each(|_| {
-                                let _ = file_change_listener.tx.send(true);
+                                _ = file_change_listener.tx.send(true);
                             });
                         }
                     }
@@ -132,7 +132,7 @@ impl Listeners {
             thread::spawn(move || {
                 if let Ok(mut workspace_listener) = workspace_listener.lock() {
                     if let Some(listener) = workspace_listener.as_mut() {
-                        let _ = listener.listener.start_listener();
+                        _ = listener.listener.start_listener();
                     }
                 }
             });
