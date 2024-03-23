@@ -35,7 +35,13 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
         Cmd::Memory(opt, _, _) => memory_usage(opt)?,
         Cmd::Backlight(_, _) => backlight_details()?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_, _) => usage()?.split('.').next().ok_or("")?.into(),
-        Cmd::Battery(_, _, _) => battery_details()?,
+        Cmd::Battery(_, _, _) => match battery_details() {
+            Ok(battery) => battery,
+            Err(_) => {
+                warn!("Battery not found, disabling module");
+                CONFIG.unkown.clone()
+            }
+        },
         Cmd::Audio(_, _, _) => new_command("pamixer --get-volume")?,
     })
 }

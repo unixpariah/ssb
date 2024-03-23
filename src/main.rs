@@ -5,7 +5,7 @@ mod util;
 use crate::config::CONFIG;
 use cairo::{Context, ImageSurface};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
-use log::{info, LevelFilter};
+use log::{info, warn, LevelFilter};
 use modules::{custom::get_command_output, memory::MemoryOpts};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -110,7 +110,7 @@ impl StatusBar {
 
         let mut listeners = Listeners::new();
 
-        let information = CONFIG
+        let information: Vec<Option<StatusData>> = CONFIG
             .modules
             .iter()
             .map(|module| {
@@ -119,9 +119,14 @@ impl StatusBar {
                     Cmd::Memory(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Battery(interval, _, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Backlight(_, _) => listeners.new_file_change_listener(
-                        &get_backlight_path().expect("Backlight not found"),
-                    ),
+                    Cmd::Backlight(_, _) => {
+                        if let Ok(path) = get_backlight_path() {
+                            listeners.new_file_change_listener(&path)
+                        } else {
+                            warn!("Backlight not found, deactivating module");
+                            return None;
+                        }
+                    }
                     Cmd::Audio(interval, _, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Custom(_, trigger, _) => match trigger {
                         Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
@@ -144,7 +149,7 @@ impl StatusBar {
 
                 let receiver = Some(receiver);
 
-                StatusData {
+                Some(StatusData {
                     output: String::new(),
                     command: &module.command,
                     x: module.x,
@@ -153,9 +158,11 @@ impl StatusBar {
                     receiver,
                     redraw: None,
                     cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
-                }
+                })
             })
+            .filter(|x| x.is_some())
             .collect();
+        let information = information.into_iter().map(|x| x.unwrap()).collect();
 
         listeners.start_listeners();
 
@@ -178,6 +185,21 @@ impl StatusBar {
             return Ok(());
         }
 
+        let font = &CONFIG.font;
+
+        let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0).unwrap();
+        let context = cairo::Context::new(&surface).unwrap();
+
+        context.select_font_face(
+            &font.family,
+            cairo::FontSlant::Normal,
+            if font.bold {
+                cairo::FontWeight::Bold
+            } else {
+                cairo::FontWeight::Normal
+            },
+        );
+        context.set_font_size(font.size);
         // TODO: Handle unwraps
         let unchanged = !self
             .information
@@ -207,9 +229,7 @@ impl StatusBar {
                                 }
                                 _ => format,
                             };
-                            let font = &CONFIG.font;
                             let context = get_context(font);
-
                             let extents = context.text_extents(&format).unwrap();
                             let width = if extents.width() as i32 > info.cache.width {
                                 extents.width() as i32

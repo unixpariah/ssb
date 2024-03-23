@@ -60,7 +60,7 @@ pub fn get_context(font: &Font) -> Context {
         },
     );
     context.set_font_size(font.size);
-    return context;
+    context
 }
 
 pub const TOML: &str = r#"# Basic configurations

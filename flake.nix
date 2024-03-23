@@ -33,8 +33,8 @@
       in {
         devShell = rustEnv;
         packages = {
-          my-rust-app = pkgs.stdenv.mkDerivation {
-            name = "my-rust-app";
+          ssb = pkgs.stdenv.mkDerivation {
+            name = "ssb";
             src = ./.;
             buildInputs = with pkgs; [rustc cargo];
             buildPhase = ''
@@ -42,7 +42,7 @@
             '';
             installPhase = ''
               mkdir -p $out/bin
-              cp target/release/my-rust-app $out/bin/
+              cp target/release/ssb $out/bin/
             '';
           };
         };
