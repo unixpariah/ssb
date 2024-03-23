@@ -4,7 +4,7 @@ use super::{
     backlight::backlight_details, battery::battery_details, cpu::usage, memory::memory_usage,
     workspaces::workspaces,
 };
-use crate::{config::CONFIG, Cmd};
+use crate::Cmd;
 use std::{error::Error, process::Command};
 
 pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
@@ -26,22 +26,16 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
     Ok(match command {
         Cmd::Custom(command, _, _) => match new_command(command) {
             Ok(output) => output,
-            Err(_) => {
+            Err(e) => {
                 warn!("Command '{command}' failed, using default value");
-                CONFIG.unkown.clone()
+                Err(e)?
             }
         },
         Cmd::Workspaces(workspace) => workspaces(workspace)?,
         Cmd::Memory(opt, _, _) => memory_usage(opt)?,
         Cmd::Backlight(_, _) => backlight_details()?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_, _) => usage()?.split('.').next().ok_or("")?.into(),
-        Cmd::Battery(_, _, _) => match battery_details() {
-            Ok(battery) => battery,
-            Err(_) => {
-                warn!("Battery not found, disabling module");
-                CONFIG.unkown.clone()
-            }
-        },
-        Cmd::Audio(_, _, _) => new_command("pamixer --get-volume")?,
+        Cmd::Battery(_, _, _) => battery_details()?,
+        Cmd::Audio(_, _) => new_command("pamixer --get-volume")?,
     })
 }

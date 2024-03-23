@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 cairo-rs = { version = "0.19.2", default-features = false, features = ["png"] }
 dirs = "5.0.1"
+futures = "0.3.30"
 hyprland = { version = "0.3.x", default-features = false, features = ["tokio", "listener"] }
 image = { version = "0.25.0", default-features = false, features = ["png"] }
 inotify = "0.10.2"

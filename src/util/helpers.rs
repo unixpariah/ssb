@@ -147,7 +147,7 @@ command.Backlight = ["%c %s%", ["", "", "", "", "", "", "",
 [[modules]]
 x = 1540.0
 y = 20.0
-command.Audio = [1000, "%c %s%", ["", "", "󰕾", ""]]
+command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
 
 # Custom Module
 

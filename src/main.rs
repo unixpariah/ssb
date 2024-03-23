@@ -6,7 +6,7 @@ use crate::config::CONFIG;
 use cairo::{Context, ImageSurface};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use log::{info, warn, LevelFilter};
-use modules::{custom::get_command_output, memory::MemoryOpts};
+use modules::{battery::battery_details, custom::get_command_output, memory::MemoryOpts};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
@@ -41,7 +41,7 @@ pub enum Cmd {
     Workspaces([String; 2]),
     Backlight(String, Vec<String>),
     Memory(MemoryOpts, u64, String),
-    Audio(u64, String, Vec<String>),
+    Audio(String, Vec<String>),
     Cpu(u64, String),
     Battery(u64, String, Vec<String>),
 }
@@ -110,15 +110,21 @@ impl StatusBar {
 
         let mut listeners = Listeners::new();
 
-        let information: Vec<Option<StatusData>> = CONFIG
+        let information = CONFIG
             .modules
             .iter()
-            .map(|module| {
+            .filter_map(|module| {
                 let receiver = match &module.command {
                     Cmd::Workspaces(_) => listeners.new_workspace_listener(),
                     Cmd::Memory(_, interval, _) => listeners.new_time_passed_listener(*interval),
                     Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Battery(interval, _, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Battery(interval, _, _) => {
+                        if battery_details().is_err() {
+                            warn!("Battery not found, deactivating module");
+                            return None;
+                        }
+                        listeners.new_time_passed_listener(*interval)
+                    }
                     Cmd::Backlight(_, _) => {
                         if let Ok(path) = get_backlight_path() {
                             listeners.new_file_change_listener(&path)
@@ -127,7 +133,7 @@ impl StatusBar {
                             return None;
                         }
                     }
-                    Cmd::Audio(interval, _, _) => listeners.new_time_passed_listener(*interval),
+                    Cmd::Audio(_, _) => listeners.new_time_passed_listener(1000),
                     Cmd::Custom(_, trigger, _) => match trigger {
                         Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                         Trigger::TimePassed(interval) => {
@@ -144,7 +150,7 @@ impl StatusBar {
                     Cmd::Battery(_, format, _) => format,
                     Cmd::Backlight(format, _) => format,
                     Cmd::Custom(_, _, format) => format,
-                    Cmd::Audio(_, format, _) => format,
+                    Cmd::Audio(format, _) => format,
                 };
 
                 let receiver = Some(receiver);
@@ -160,9 +166,7 @@ impl StatusBar {
                     cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
                 })
             })
-            .filter(|x| x.is_some())
             .collect();
-        let information = information.into_iter().map(|x| x.unwrap()).collect();
 
         listeners.start_listeners();
 
@@ -215,7 +219,7 @@ impl StatusBar {
                             let format = match info.command {
                                 Cmd::Battery(_, _, icons)
                                 | Cmd::Backlight(_, icons)
-                                | Cmd::Audio(_, _, icons)
+                                | Cmd::Audio(_, icons)
                                     if !icons.is_empty() =>
                                 {
                                     if let Ok(output) = output.parse::<usize>() {
@@ -343,11 +347,11 @@ impl OutputHandler for StatusBar {
         if let Some(info) = self.output_state.info(&output) {
             let height = CONFIG.height;
             if let Some((width, _)) = info.logical_size {
-                layer.set_anchor(if CONFIG.topbar {
-                    Anchor::TOP
-                } else {
-                    Anchor::BOTTOM
+                layer.set_anchor(match CONFIG.topbar {
+                    true => Anchor::TOP,
+                    false => Anchor::BOTTOM,
                 });
+
                 layer.set_exclusive_zone(height);
                 layer.set_size(width as u32, height as u32);
                 layer.commit();
