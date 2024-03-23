@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::util::helpers::get_backlight_path;
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum BacklightOpts {
     Perc,
     Value,

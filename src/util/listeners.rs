@@ -8,7 +8,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Trigger {
     WorkspaceChanged,
     TimePassed(u64),

@@ -1,32 +1,5 @@
-use crate::config::CONFIG;
-use cairo::{Context, TextExtents};
-
-pub fn set_background_context(context: &Context) {
-    let background = CONFIG.background;
-    let font = &CONFIG.font;
-
-    context.set_source_rgb(
-        background[0] as f64 / 255.0,
-        background[1] as f64 / 255.0,
-        background[2] as f64 / 255.0,
-    );
-    _ = context.paint();
-    context.set_source_rgb(
-        font.color[0] as f64 / 255.0,
-        font.color[1] as f64 / 255.0,
-        font.color[2] as f64 / 255.0,
-    );
-    context.select_font_face(
-        &font.family,
-        cairo::FontSlant::Normal,
-        if font.bold {
-            cairo::FontWeight::Bold
-        } else {
-            cairo::FontWeight::Normal
-        },
-    );
-    context.set_font_size(font.size);
-}
+use crate::config::{Font, CONFIG};
+use cairo::{Context, ImageSurface, TextExtents};
 
 pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>> {
     let mut dirs = std::fs::read_dir("/sys/class/backlight")?;
@@ -71,6 +44,23 @@ pub fn set_info_context(context: &Context, extents: TextExtents) {
         },
     );
     context.set_font_size(font.size);
+}
+
+pub fn get_context(font: &Font) -> Context {
+    let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0).unwrap();
+    let context = cairo::Context::new(&surface).unwrap();
+
+    context.select_font_face(
+        &font.family,
+        cairo::FontSlant::Normal,
+        if font.bold {
+            cairo::FontWeight::Bold
+        } else {
+            cairo::FontWeight::Normal
+        },
+    );
+    context.set_font_size(font.size);
+    return context;
 }
 
 pub const TOML: &str = r#"# Basic configurations

@@ -50,6 +50,7 @@ pub struct Config {
     pub height: i32,
     #[serde(default)]
     pub font: Font,
+    #[serde(default)]
     pub modules: Vec<Module>,
 }
 

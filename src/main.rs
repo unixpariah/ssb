@@ -7,6 +7,7 @@ use cairo::{Context, ImageSurface};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use log::{info, LevelFilter};
 use modules::{custom::get_command_output, memory::MemoryOpts};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
@@ -24,7 +25,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{get_backlight_path, set_background_context, set_info_context},
+    helpers::{get_backlight_path, get_context, set_info_context},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -33,15 +34,16 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+// TODO: make these vecs of strings optional
+#[derive(Debug, Deserialize, Serialize)]
 pub enum Cmd {
     Custom(String, Trigger, String),
     Workspaces([String; 2]),
-    Backlight(String, Option<Vec<String>>),
+    Backlight(String, Vec<String>),
     Memory(MemoryOpts, u64, String),
-    Audio(u64, String, Option<Vec<String>>),
+    Audio(u64, String, Vec<String>),
     Cpu(u64, String),
-    Battery(u64, String, Option<Vec<String>>),
+    Battery(u64, String, Vec<String>),
 }
 
 #[derive(Debug)]
@@ -176,25 +178,10 @@ impl StatusBar {
             return Ok(());
         }
 
-        let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0)?;
-        let context = cairo::Context::new(&surface)?;
-
-        let font = &CONFIG.font;
-        context.select_font_face(
-            &font.family,
-            cairo::FontSlant::Normal,
-            if font.bold {
-                cairo::FontWeight::Bold
-            } else {
-                cairo::FontWeight::Normal
-            },
-        );
-        context.set_font_size(font.size);
-
         // TODO: Handle unwraps
         let unchanged = !self
             .information
-            .iter_mut()
+            .par_iter_mut()
             .map(|info| {
                 if let Some(redraw) = &info.redraw {
                     if redraw.try_recv().is_ok() || info.output.is_empty() {
@@ -204,9 +191,9 @@ impl StatusBar {
                         if output != info.output {
                             let format = info.format.replace("%s", &output);
                             let format = match info.command {
-                                Cmd::Battery(_, _, Some(icons))
-                                | Cmd::Backlight(_, Some(icons))
-                                | Cmd::Audio(_, _, Some(icons))
+                                Cmd::Battery(_, _, icons)
+                                | Cmd::Backlight(_, icons)
+                                | Cmd::Audio(_, _, icons)
                                     if !icons.is_empty() =>
                                 {
                                     if let Ok(output) = output.parse::<usize>() {
@@ -220,8 +207,10 @@ impl StatusBar {
                                 }
                                 _ => format,
                             };
-                            let extents = context.text_extents(&format).unwrap();
+                            let font = &CONFIG.font;
+                            let context = get_context(font);
 
+                            let extents = context.text_extents(&format).unwrap();
                             let width = if extents.width() as i32 > info.cache.width {
                                 extents.width() as i32
                             } else {
@@ -257,7 +246,8 @@ impl StatusBar {
                 info.cache.unchanged = true;
                 false
             })
-            .fold(false, |a, b| if b { b } else { a });
+            .reduce_with(|a, b| if b { b } else { a })
+            .unwrap_or(false);
 
         if unchanged {
             self.dispatch = false;
@@ -345,7 +335,31 @@ impl OutputHandler for StatusBar {
                 let img_surface =
                     ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
-                set_background_context(&context);
+
+                let background = CONFIG.background;
+                let font = &CONFIG.font;
+
+                context.set_source_rgb(
+                    background[0] as f64 / 255.0,
+                    background[1] as f64 / 255.0,
+                    background[2] as f64 / 255.0,
+                );
+                _ = context.paint();
+                context.set_source_rgb(
+                    font.color[0] as f64 / 255.0,
+                    font.color[1] as f64 / 255.0,
+                    font.color[2] as f64 / 255.0,
+                );
+                context.select_font_face(
+                    &font.family,
+                    cairo::FontSlant::Normal,
+                    if font.bold {
+                        cairo::FontWeight::Bold
+                    } else {
+                        cairo::FontWeight::Normal
+                    },
+                );
+                context.set_font_size(font.size);
 
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);

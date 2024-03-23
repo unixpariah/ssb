@@ -3,7 +3,7 @@ use sysinfo::System;
 
 use std::error::Error;
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum MemoryOpts {
     Used,
     Free,
@@ -11,7 +11,7 @@ pub enum MemoryOpts {
     PercFree,
 }
 
-pub fn memory_usage(opt: MemoryOpts) -> Result<String, Box<dyn Error>> {
+pub fn memory_usage(opt: &MemoryOpts) -> Result<String, Box<dyn Error>> {
     let mut system = System::new();
     system.refresh_memory();
     let free = system.free_memory() as f64;
@@ -19,10 +19,10 @@ pub fn memory_usage(opt: MemoryOpts) -> Result<String, Box<dyn Error>> {
     let total = free + used;
 
     let output = match opt {
-        MemoryOpts::PercUsed => (used / total) * 100.0,
-        MemoryOpts::PercFree => (free / total) * 100.0,
+        MemoryOpts::PercUsed => (free / total) * 100.0,
+        MemoryOpts::PercFree => (used / total) * 100.0,
         MemoryOpts::Used => used,
-        MemoryOpts::Free => total - used,
+        MemoryOpts::Free => free,
     }
     .to_string()
     .split('.')
