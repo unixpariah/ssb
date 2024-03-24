@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::sync::broadcast;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Trigger {
     WorkspaceChanged,
     TimePassed(u64),
@@ -197,7 +197,7 @@ impl Listeners {
             context.subscribe(InterestMaskSet::SINK, |_| {});
 
             loop {
-                thread::sleep(std::time::Duration::from_millis(250));
+                thread::sleep(std::time::Duration::from_secs(100));
             }
         });
     }

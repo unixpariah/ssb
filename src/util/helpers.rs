@@ -1,4 +1,4 @@
-use crate::config::{Font, CONFIG};
+use crate::config::Font;
 use cairo::{Context, ImageSurface, TextExtents};
 
 pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>> {
@@ -17,9 +17,9 @@ pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>>
     Ok(backlight_path.path())
 }
 
-pub fn set_info_context(context: &Context, extents: TextExtents) {
-    let background = CONFIG.background;
-    let font = &CONFIG.font;
+pub fn set_info_context(context: &Context, extents: TextExtents, config: &crate::config::Config) {
+    let background = config.background;
+    let font = &config.font;
 
     context.set_source_rgb(
         background[0] as f64 / 255.0,

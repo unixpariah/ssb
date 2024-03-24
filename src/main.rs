@@ -2,8 +2,8 @@ mod config;
 mod modules;
 mod util;
 
-use crate::config::CONFIG;
 use cairo::{Context, ImageSurface};
+use config::get_config;
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use log::{info, warn, LevelFilter};
 use modules::{battery::battery_details, custom::get_command_output, memory::MemoryOpts};
@@ -25,7 +25,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{get_backlight_path, get_context, set_info_context},
+    helpers::{get_backlight_path, get_context, set_info_context, TOML},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -35,7 +35,7 @@ use wayland_client::{
 };
 
 // TODO: make these vecs of strings optional
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Cmd {
     Custom(String, Trigger, String),
     Workspaces([String; 2]),
@@ -73,12 +73,12 @@ impl ImgCache {
     }
 }
 
-pub struct StatusData {
+pub struct ModuleData {
     output: String,
-    command: &'static Cmd,
+    command: Cmd,
     x: f64,
     y: f64,
-    format: &'static str,
+    format: String,
     receiver: Option<broadcast::Receiver<bool>>,
     redraw: Option<mpsc::Receiver<bool>>,
     cache: ImgCache,
@@ -91,10 +91,11 @@ struct StatusBar {
     surfaces: Vec<Surface>,
     layer_shell: LayerShell,
     compositor_state: CompositorState,
-    information: Vec<StatusData>,
+    information: Vec<ModuleData>,
     draw: mpsc::Receiver<bool>,
     cache: HashMap<i32, RgbImage>,
     dispatch: bool,
+    config: config::Config,
 }
 
 impl StatusBar {
@@ -108,9 +109,11 @@ impl StatusBar {
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
+        let toml = toml::from_str(TOML).expect("If you see this, it means that lazy ass developer did not care to update default config");
+        let config = get_config().unwrap_or(toml);
         let mut listeners = Listeners::new();
 
-        let information = CONFIG
+        let information = config
             .modules
             .iter()
             .filter_map(|module| {
@@ -156,12 +159,12 @@ impl StatusBar {
 
                 let receiver = Some(receiver);
 
-                Some(StatusData {
+                Some(ModuleData {
                     output: String::new(),
-                    command: &module.command,
+                    command: module.command.clone(),
                     x: module.x,
                     y: module.y,
-                    format,
+                    format: format.to_string(),
                     receiver,
                     redraw: None,
                     cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
@@ -182,6 +185,7 @@ impl StatusBar {
             draw: rx,
             cache: HashMap::new(),
             dispatch: true,
+            config,
         }
     }
 
@@ -190,7 +194,7 @@ impl StatusBar {
             return Ok(());
         }
 
-        let font = &CONFIG.font;
+        let font = &self.config.font;
 
         let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0).unwrap();
         let context = cairo::Context::new(&surface).unwrap();
@@ -212,12 +216,12 @@ impl StatusBar {
             .map(|info| {
                 if let Some(redraw) = &info.redraw {
                     if redraw.try_recv().is_ok() || info.output.is_empty() {
-                        let output =
-                            get_command_output(info.command).unwrap_or(CONFIG.unkown.to_string());
+                        let output = get_command_output(&info.command)
+                            .unwrap_or(self.config.unkown.to_string());
 
                         if output != info.output {
                             let format = info.format.replace("%s", &output);
-                            let format = match info.command {
+                            let format = match &info.command {
                                 Cmd::Battery(_, _, icons)
                                 | Cmd::Backlight(_, icons)
                                 | Cmd::Audio(_, icons)
@@ -229,7 +233,7 @@ impl StatusBar {
                                             [std::cmp::min(output / range_size, icons.len() - 1)];
                                         format.replace("%c", icon)
                                     } else {
-                                        format.replace("%c", " ")
+                                        format.replace("%c", "")
                                     }
                                 }
                                 _ => format,
@@ -251,7 +255,7 @@ impl StatusBar {
                             let surface =
                                 ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
                             let context = cairo::Context::new(&surface).unwrap();
-                            set_info_context(&context, extents);
+                            set_info_context(&context, extents, &self.config);
 
                             _ = context.show_text(&format);
 
@@ -282,7 +286,7 @@ impl StatusBar {
         self.cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
-            let height = CONFIG.height;
+            let height = self.config.height;
 
             if self.cache.get(&width).is_none() {
                 let background = &mut surface.background;
@@ -346,9 +350,9 @@ impl OutputHandler for StatusBar {
         );
 
         if let Some(info) = self.output_state.info(&output) {
-            let height = CONFIG.height;
+            let height = self.config.height;
             if let Some((width, _)) = info.logical_size {
-                layer.set_anchor(match CONFIG.topbar {
+                layer.set_anchor(match self.config.topbar {
                     true => Anchor::TOP,
                     false => Anchor::BOTTOM,
                 });
@@ -361,8 +365,8 @@ impl OutputHandler for StatusBar {
                     ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
 
-                let background = CONFIG.background;
-                let font = &CONFIG.font;
+                let background = self.config.background;
+                let font = &self.config.font;
 
                 context.set_source_rgb(
                     background[0] as f64 / 255.0,
@@ -493,6 +497,7 @@ async fn setup_listeners(
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
+                // Listener is Option just to make it easier to take the value so unwraping is safe
                 if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
                     _ = sender.send(message);
                     _ = listener.1.send(true);
@@ -523,9 +528,11 @@ async fn main() {
             info.redraw = Some(rx);
             (info.receiver.take(), tx)
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    setup_listeners(receivers, tx).await;
+    if !receivers.is_empty() {
+        setup_listeners(receivers, tx).await;
+    }
 
     loop {
         status_bar.draw().expect("Failed to draw");
