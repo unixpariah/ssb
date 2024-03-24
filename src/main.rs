@@ -133,7 +133,7 @@ impl StatusBar {
                             return None;
                         }
                     }
-                    Cmd::Audio(_, _) => listeners.new_time_passed_listener(1000),
+                    Cmd::Audio(_, _) => listeners.new_volume_change_listener(),
                     Cmd::Custom(_, trigger, _) => match trigger {
                         Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                         Trigger::TimePassed(interval) => {

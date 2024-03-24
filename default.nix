@@ -8,6 +8,8 @@ in
     src = pkgs.lib.cleanSource ./.;
     buildInputs = with pkgs; [
       cairo
+      libpulseaudio
+      pulseaudio
     ];
     nativeBuildInputs = with pkgs; [
       pkg-config

@@ -1,5 +1,12 @@
+extern crate libpulse_binding as pulse;
+
 use hyprland::{event_listener::EventListener, shared::HyprDataActive};
 use inotify::{Inotify, WatchMask};
+use log::warn;
+use pulse::{
+    context::{subscribe::InterestMaskSet, Context, FlagSet as ContextFlagSet},
+    mainloop::threaded::Mainloop,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
@@ -39,6 +46,7 @@ pub struct Listeners {
     pub workspace_listener: Arc<Mutex<Option<WorkspaceListenerData>>>,
     pub file_change_listener: Arc<Mutex<Option<FileChangeListenerData>>>,
     pub time_passed_listener: Arc<Mutex<Vec<TimeListenerData>>>,
+    pub volume_change_listener: Arc<Mutex<Option<broadcast::Sender<bool>>>>,
 }
 
 impl Listeners {
@@ -47,12 +55,15 @@ impl Listeners {
             file_change_listener: Arc::new(Mutex::new(None)),
             workspace_listener: Arc::new(Mutex::new(None)),
             time_passed_listener: Arc::new(Mutex::new(Vec::new())),
+            volume_change_listener: Arc::new(Mutex::new(None)),
         }
     }
 
     pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {
-        if let Some(workspace_listener) = self.workspace_listener.lock().unwrap().as_ref() {
-            return workspace_listener.tx.subscribe();
+        if let Ok(workspace_listener) = self.workspace_listener.lock() {
+            if let Some(workspace_listener) = workspace_listener.as_ref() {
+                return workspace_listener.tx.subscribe();
+            }
         }
 
         let listener;
@@ -96,62 +107,98 @@ impl Listeners {
         let time_passed_listener = Arc::clone(&self.time_passed_listener);
         let file_change_listener = Arc::clone(&self.file_change_listener);
         let workspace_listener = Arc::clone(&self.workspace_listener);
+        let volume_listener = Arc::clone(&self.volume_change_listener);
 
         // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
         // to the listeners whose interval has passed and resets the interval in a loop
-        if !time_passed_listener.lock().unwrap().is_empty() {
-            thread::spawn(move || {
-                if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
-                    loop {
-                        time_passed_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
-                        let min_interval = time_passed_listener[0].interval;
-                        thread::sleep(std::time::Duration::from_millis(min_interval));
-                        for data in time_passed_listener.iter_mut() {
-                            if data.interval <= min_interval {
-                                _ = data.tx.send(true);
-                                data.interval = data.original_interval;
-                            } else {
-                                data.interval -= min_interval;
-                            }
+        thread::spawn(move || {
+            if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
+                if time_passed_listener.is_empty() {
+                    return;
+                }
+
+                loop {
+                    time_passed_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
+                    let min_interval = time_passed_listener[0].interval;
+                    thread::sleep(std::time::Duration::from_millis(min_interval));
+                    for data in time_passed_listener.iter_mut() {
+                        if data.interval <= min_interval {
+                            _ = data.tx.send(true);
+                            data.interval = data.original_interval;
+                        } else {
+                            data.interval -= min_interval;
                         }
                     }
                 }
-            });
-        }
+            }
+        });
 
-        if file_change_listener.lock().unwrap().is_some() {
-            thread::spawn(move || {
-                if let Ok(mut file_change_listener) = file_change_listener.lock() {
-                    loop {
-                        let mut buffer = [0; 1024];
-                        if let Some(file_change_listener) = file_change_listener.as_mut() {
-                            let events = file_change_listener
-                                .inotify
-                                .read_events_blocking(&mut buffer)
-                                .expect("Failed to read events");
+        thread::spawn(move || {
+            if let Ok(mut file_change_listener) = file_change_listener.lock() {
+                if file_change_listener.is_none() {
+                    return;
+                }
 
+                loop {
+                    let mut buffer = [0; 1024];
+                    if let Some(file_change_listener) = file_change_listener.as_mut() {
+                        if let Ok(events) = file_change_listener
+                            .inotify
+                            .read_events_blocking(&mut buffer)
+                        {
                             events.for_each(|_| {
                                 _ = file_change_listener.tx.send(true);
                             });
                         }
                     }
                 }
-            });
-        }
+            }
+        });
 
-        if workspace_listener.lock().unwrap().is_some() {
-            thread::spawn(move || {
-                if let Ok(mut workspace_listener) = workspace_listener.lock() {
-                    if let Some(listener) = workspace_listener.as_mut() {
-                        match &mut listener.listener {
-                            WorkspaceListener::Hyprland(listener) => {
-                                let _ = listener.start_listener();
-                            }
+        thread::spawn(move || {
+            if let Ok(mut workspace_listener) = workspace_listener.lock() {
+                if workspace_listener.is_none() {
+                    return;
+                }
+
+                if let Some(listener) = workspace_listener.as_mut() {
+                    match &mut listener.listener {
+                        WorkspaceListener::Hyprland(listener) => {
+                            let _ = listener.start_listener();
                         }
                     }
                 }
-            });
-        }
+            }
+        });
+
+        thread::spawn(move || {
+            let mut mainloop = Mainloop::new().unwrap();
+            let mut context = Context::new(&mainloop, "volume-change-listener").unwrap();
+            _ = context.connect(None, ContextFlagSet::NOFLAGS, None);
+
+            _ = mainloop.start();
+            loop {
+                if context.get_state() == libpulse_binding::context::State::Ready {
+                    break;
+                }
+            }
+
+            context.set_subscribe_callback(Some(Box::new(move |_, _, _| {
+                if let Ok(volume_listener) = volume_listener.lock() {
+                    if volume_listener.is_none() {
+                        return;
+                    }
+
+                    // Safe to unwrap because we just checked if it was none
+                    _ = volume_listener.clone().unwrap().send(true);
+                }
+            })));
+            context.subscribe(InterestMaskSet::SINK, |_| {});
+
+            loop {
+                thread::sleep(std::time::Duration::from_millis(250));
+            }
+        });
     }
 
     pub fn new_time_passed_listener(&mut self, interval: u64) -> broadcast::Receiver<bool> {
@@ -182,14 +229,34 @@ impl Listeners {
                 });
             }
 
-            file_change_listener
+            if let Err(e) = file_change_listener
                 .as_mut()
+                // Safe to unwrap because we just checked if it was none
                 .unwrap()
                 .inotify
                 .watches()
                 .add(path, WatchMask::MODIFY)
-                .expect("Failed to add watch");
+            {
+                warn!(
+                    "Failed to create file change listener for path: {}\n {}",
+                    path.display(),
+                    e
+                );
+            }
         }
+
+        rx
+    }
+
+    pub fn new_volume_change_listener(&mut self) -> broadcast::Receiver<bool> {
+        if let Ok(volume_change_listener) = self.volume_change_listener.lock() {
+            if let Some(volume_change_listener) = volume_change_listener.as_ref() {
+                return volume_change_listener.subscribe();
+            }
+        }
+
+        let (tx, rx) = broadcast::channel(1);
+        self.volume_change_listener = Arc::new(Mutex::new(Some(tx)));
 
         rx
     }
