@@ -15,6 +15,4 @@ in
     nativeBuildInputs = with pkgs; [
       pkg-config
     ];
-
-    NIX_LDFLAGS = "-L${pkgs.libpulseaudio.out}/lib";
   }

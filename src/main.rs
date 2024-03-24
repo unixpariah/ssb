@@ -109,8 +109,9 @@ impl StatusBar {
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
-        let toml = toml::from_str(TOML).expect("If you see this, it means that lazy ass developer did not care to update default config");
-        let config = get_config().unwrap_or(toml);
+        let config = get_config().unwrap_or_else(|_| {
+            toml::from_str(TOML).expect("If you see this, it means that lazy ass developer did not care to update default config")
+        });
         let mut listeners = Listeners::new();
 
         let information = config
@@ -161,6 +162,7 @@ impl StatusBar {
 
                 Some(ModuleData {
                     output: String::new(),
+                    // TODO: Get rid of this clone
                     command: module.command.clone(),
                     x: module.x,
                     y: module.y,
@@ -209,7 +211,6 @@ impl StatusBar {
             },
         );
         context.set_font_size(font.size);
-        // TODO: Handle unwraps
         let unchanged = !self
             .information
             .par_iter_mut()
@@ -239,7 +240,12 @@ impl StatusBar {
                                 _ => format,
                             };
                             let context = get_context(font);
-                            let extents = context.text_extents(&format).unwrap();
+                            let extents = match context.text_extents(&format) {
+                                Ok(extents) => extents,
+                                Err(_) => {
+                                    return false;
+                                }
+                            };
                             let width = if extents.width() as i32 > info.cache.width {
                                 extents.width() as i32
                             } else {
@@ -253,8 +259,18 @@ impl StatusBar {
                             };
 
                             let surface =
-                                ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
-                            let context = cairo::Context::new(&surface).unwrap();
+                                match ImageSurface::create(cairo::Format::Rgb30, width, height) {
+                                    Ok(surface) => surface,
+                                    Err(_) => {
+                                        return false;
+                                    }
+                                };
+                            let context = match cairo::Context::new(&surface) {
+                                Ok(context) => context,
+                                Err(_) => {
+                                    return false;
+                                }
+                            };
                             set_info_context(&context, extents, &self.config);
 
                             _ = context.show_text(&format);
@@ -394,7 +410,9 @@ impl OutputHandler for StatusBar {
                 _ = img_surface.write_to_png(&mut background);
 
                 if let Ok(background) = image::load_from_memory(&background) {
-                    info!("Bar configured for output: {:?}", info.name.unwrap());
+                    if let Some(name) = info.name {
+                        info!("Bar configured for output: {:?}", name);
+                    }
 
                     self.surfaces.push(Surface {
                         output_id: info.id,
