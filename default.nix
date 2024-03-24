@@ -6,12 +6,16 @@ in
     version = manifest.version;
     cargoLock.lockFile = ./Cargo.lock;
     src = pkgs.lib.cleanSource ./.;
+
     buildInputs = with pkgs; [
       cairo
       libpulseaudio
       pulseaudio
     ];
+
     nativeBuildInputs = with pkgs; [
       pkg-config
     ];
+
+    NIX_LDFLAGS = "-L${pkgs.libpulseaudio.out}/lib";
   }
