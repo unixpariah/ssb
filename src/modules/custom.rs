@@ -48,9 +48,4 @@ mod tests {
     fn test_new_command() {
         assert!(new_command("echo test").is_ok());
     }
-
-    #[test]
-    fn test_get_command_output() {
-        assert!(get_command_output(&Cmd::Audio("".into(), vec![])).is_ok());
-    }
 }

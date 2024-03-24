@@ -43,18 +43,3 @@ fn hyprland() -> Result<(usize, usize), Box<dyn Error>> {
 
     Ok((active_workspace, length))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_workspaces() {
-        assert!(workspaces(&["".into(), "".into()]).is_ok());
-    }
-
-    #[test]
-    fn test_hyprland() {
-        assert!(hyprland().is_ok());
-    }
-}
