@@ -10,7 +10,6 @@ in
     buildInputs = with pkgs; [
       cairo
       libpulseaudio
-      pulseaudio
     ];
 
     nativeBuildInputs = with pkgs; [

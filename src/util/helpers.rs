@@ -141,8 +141,8 @@ command.Backlight = ["%c %s%", ["", "", "", "", "", "", "",
 
 # Audio Module
 
-# This module is designed to control and display the audio level. It takes three arguments: 
-# the refresh interval, the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
+# This module is designed to control and display the audio level. It takes two arguments: 
+# the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
 
 [[modules]]
 x = 1540.0
@@ -154,21 +154,19 @@ command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
 # This module allows for custom commands. It takes three arguments: the command to execute, 
 # the trigger event, and the formatting for the display (with "%s" as a placeholder for the value).
 
-# Trigger Events
-
-# Trigger events are conditions that cause a module to update. There are three types of trigger events:
+# Available trigger Events:
 
 # WorkspaceChanged
-
 # This event is triggered when the active workspace changes. It doesn't take any arguments.
 
 # FileChanged
-
 # This event is triggered when a specified file changes. It takes one argument: the path to the file to monitor for changes.
 
 # TimePassed
-
 # This event is triggered at regular intervals. It takes one argument: the time in milliseconds between updates.
+
+# VolumeChanged
+# This event is triggered when the volume changes. It doesn't take any arguments.
 
 [[modules]]
 x = 925.0

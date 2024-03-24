@@ -20,6 +20,7 @@ pub enum Trigger {
     WorkspaceChanged,
     TimePassed(u64),
     FileChange(PathBuf),
+    VolumeChanged,
 }
 
 pub enum WorkspaceListener {

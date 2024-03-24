@@ -140,6 +140,7 @@ impl StatusBar {
                             listeners.new_time_passed_listener(*interval)
                         }
                         Trigger::FileChange(path) => listeners.new_file_change_listener(path),
+                        Trigger::VolumeChanged => listeners.new_volume_change_listener(),
                     },
                 };
 

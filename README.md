@@ -7,27 +7,50 @@ Ssb is a simple status bar for wayland written in rust.
 - Compositor implementing the wlr-layer-shell protocol (Hyprland, sway, wayfire, etc.)
 - cairo
 - rust
+- libpulseaudio
 
 ## Installation
 
-1. Clone the repo
+### The cargo way (Not yet on cargo)
+
+Run this command
 
 ```sh
-git clone https://github.com/unixpariah/ssb
+cargo install ssb
 ```
 
-2. Install dependencies or use nix flake
+### The nix way
 
-3. Build the project and install binary
+Include this in your configuration.nix
 
-```sh
-make install
+```nix
+    (let
+      pkg = import (fetchTarball {
+        url = "https://github.com/unixpariah/ssb/archive/master.tar.gz";
+      }) {};
+    in
+      pkg.overrideAttrs (oldAttrs: {
+        buildInputs =
+          oldAttrs.buildInputs
+          ++ [libpulseaudio];
+      }))
 ```
 
-4. Run the binary
+Or if you want specific github revision
 
-```sh
-ssb
+```nix
+    (let
+      pkg = import (fetchGit {
+        url = "https://github.com/unixpariah/ssb/.git";
+        ref = "main";
+        rev = "revision hash"
+      }) {};
+    in
+      pkg.overrideAttrs (oldAttrs: {
+        buildInputs =
+          oldAttrs.buildInputs
+          ++ [libpulseaudio];
+      }))
 ```
 
 ## Configuration
@@ -36,7 +59,6 @@ The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on f
 
 ## TODO
 - [ ] Add sway support (and other compositors as well)
-- [ ] Add listener to volume change
 - [ ] Implement hot refresh config
 - [ ] Add better styling
 - [ ] Fix crashing when new output is added
