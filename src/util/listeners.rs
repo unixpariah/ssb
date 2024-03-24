@@ -262,3 +262,40 @@ impl Listeners {
         rx
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_new_time_passed_listener() {
+        let mut listeners = Listeners::new();
+        assert!(listeners.time_passed_listener.lock().unwrap().is_empty());
+        let mut listener = listeners.new_time_passed_listener(1000);
+        assert!(!listeners.time_passed_listener.lock().unwrap().is_empty());
+
+        let result = listener.try_recv();
+        assert!(result.is_err());
+
+        listeners.start_listeners();
+        let result = listener.recv().await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_new_file_change_listener() {
+        let mut listeners = Listeners::new();
+        assert!(listeners.file_change_listener.lock().unwrap().is_none());
+        _ = listeners.new_file_change_listener(&PathBuf::from("/tmp"));
+        assert!(listeners.file_change_listener.lock().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_new_volume_change_listener() {
+        let mut listeners = Listeners::new();
+        assert!(listeners.volume_change_listener.lock().unwrap().is_none());
+        _ = listeners.new_volume_change_listener();
+        assert!(listeners.volume_change_listener.lock().unwrap().is_some());
+    }
+}

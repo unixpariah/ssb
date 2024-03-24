@@ -32,3 +32,13 @@ pub fn memory_usage(opt: &MemoryOpts) -> Result<String, Box<dyn Error>> {
 
     Ok(output)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_usage() {
+        assert!(memory_usage(&MemoryOpts::Used).is_ok());
+    }
+}

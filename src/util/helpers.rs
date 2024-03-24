@@ -178,3 +178,13 @@ x = 1775.0
 y = 20.0
 command.Custom = ["iwgetid -r", { TimePassed = 10000 }, "  %s"]
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_backlight_path() {
+        assert!(get_backlight_path().is_ok());
+    }
+}

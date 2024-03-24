@@ -39,3 +39,18 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
         Cmd::Audio(_, _) => new_command("pamixer --get-volume")?,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_command() {
+        assert!(new_command("echo test").is_ok());
+    }
+
+    #[test]
+    fn test_get_command_output() {
+        assert!(get_command_output(&Cmd::Audio("".into(), vec![])).is_ok());
+    }
+}
