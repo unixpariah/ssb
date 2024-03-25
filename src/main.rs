@@ -115,50 +115,58 @@ impl StatusBar {
         let config = get_config().unwrap_or_else(|_| {
             toml::from_str(TOML).expect("If you see this, it means that lazy ass developer did not care to update default config")
         });
+
         let mut listeners = Listeners::new();
 
         let information = config
             .modules
             .iter()
             .filter_map(|module| {
-                let receiver = match &module.command {
-                    Cmd::Workspaces(_) => listeners.new_workspace_listener(),
-                    Cmd::Memory(_, interval, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Cpu(interval, _) => listeners.new_time_passed_listener(*interval),
-                    Cmd::Battery(interval, _, _) => {
+                let (receiver, format) = match &module.command {
+                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+                    Cmd::Memory(_, interval, format) => (
+                        listeners.new_time_passed_listener(*interval),
+                        format.as_str(),
+                    ),
+                    Cmd::Cpu(interval, format) => (
+                        listeners.new_time_passed_listener(*interval),
+                        format.as_str(),
+                    ),
+                    Cmd::Battery(interval, format, _) => {
                         if battery_details().is_err() {
                             warn!("Battery not found, deactivating module");
                             return None;
                         }
-                        listeners.new_time_passed_listener(*interval)
+                        (
+                            listeners.new_time_passed_listener(*interval),
+                            format.as_str(),
+                        )
                     }
-                    Cmd::Backlight(_, _) => {
-                        if let Ok(path) = get_backlight_path() {
-                            listeners.new_file_change_listener(&path)
-                        } else {
+                    Cmd::Backlight(format, _) => match get_backlight_path() {
+                        Ok(path) => (listeners.new_file_change_listener(&path), format.as_str()),
+                        Err(_) => {
                             warn!("Backlight not found, deactivating module");
                             return None;
                         }
-                    }
-                    Cmd::Audio(_, _) => listeners.new_volume_change_listener(),
-                    Cmd::Custom(_, trigger, _) => match trigger {
-                        Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
-                        Trigger::TimePassed(interval) => {
-                            listeners.new_time_passed_listener(*interval)
-                        }
-                        Trigger::FileChange(path) => listeners.new_file_change_listener(path),
-                        Trigger::VolumeChanged => listeners.new_volume_change_listener(),
                     },
-                };
-
-                let format = match &module.command {
-                    Cmd::Workspaces(_) => "%s",
-                    Cmd::Memory(_, _, format) => format,
-                    Cmd::Cpu(_, format) => format,
-                    Cmd::Battery(_, format, _) => format,
-                    Cmd::Backlight(format, _) => format,
-                    Cmd::Custom(_, _, format) => format,
-                    Cmd::Audio(format, _) => format,
+                    Cmd::Audio(format, _) => {
+                        (listeners.new_volume_change_listener(), format.as_str())
+                    }
+                    Cmd::Custom(_, trigger, format) => match trigger {
+                        Trigger::WorkspaceChanged => {
+                            (listeners.new_workspace_listener(), format.as_str())
+                        }
+                        Trigger::TimePassed(interval) => (
+                            listeners.new_time_passed_listener(*interval),
+                            format.as_str(),
+                        ),
+                        Trigger::FileChange(path) => {
+                            (listeners.new_file_change_listener(path), format.as_str())
+                        }
+                        Trigger::VolumeChanged => {
+                            (listeners.new_volume_change_listener(), format.as_str())
+                        }
+                    },
                 };
 
                 let receiver = Some(receiver);
