@@ -6,7 +6,10 @@ use cairo::{Context, ImageSurface};
 use config::get_config;
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use log::{info, warn, LevelFilter};
-use modules::{battery::battery_details, custom::get_command_output, memory::MemoryOpts};
+use modules::{
+    backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
+    memory::MemoryOpts,
+};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
@@ -25,7 +28,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{get_backlight_path, get_context, set_info_context, TOML},
+    helpers::{get_context, set_info_context, TOML},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
