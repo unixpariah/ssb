@@ -9,7 +9,8 @@ use pulse::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    path::PathBuf,
+    collections::HashMap,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
 };
@@ -39,7 +40,7 @@ pub struct TimeListenerData {
 }
 
 pub struct FileChangeListenerData {
-    tx: broadcast::Sender<bool>,
+    store: HashMap<String, broadcast::Sender<bool>>,
     inotify: Inotify,
 }
 
@@ -147,8 +148,14 @@ impl Listeners {
                             .inotify
                             .read_events_blocking(&mut buffer)
                         {
-                            events.for_each(|_| {
-                                _ = file_change_listener.tx.send(true);
+                            events.for_each(|event| {
+                                if let Some(tx) = file_change_listener
+                                    .store
+                                    // We're always listening to parent changes so unwrap is safe (I hope)
+                                    .get(&event.name.unwrap().to_string_lossy().to_string())
+                                {
+                                    _ = tx.send(true);
+                                }
                             });
                         }
                     }
@@ -219,15 +226,23 @@ impl Listeners {
         rx
     }
 
-    pub fn new_file_change_listener(&mut self, path: &PathBuf) -> broadcast::Receiver<bool> {
+    pub fn new_file_change_listener(&mut self, path: &Path) -> broadcast::Receiver<bool> {
         let (tx, rx) = broadcast::channel(1);
 
         if let Ok(mut file_change_listener) = self.file_change_listener.lock() {
             if file_change_listener.is_none() {
+                let mut store = HashMap::new();
+                store.insert(path.file_name().unwrap().to_string_lossy().to_string(), tx);
                 *file_change_listener = Some(FileChangeListenerData {
-                    tx,
+                    store,
                     inotify: Inotify::init().expect("Failed to setup inotify"),
                 });
+            } else {
+                file_change_listener
+                    .as_mut()
+                    .unwrap()
+                    .store
+                    .insert(path.file_name().unwrap().to_string_lossy().to_string(), tx);
             }
 
             if let Err(e) = file_change_listener
@@ -236,7 +251,7 @@ impl Listeners {
                 .unwrap()
                 .inotify
                 .watches()
-                .add(path, WatchMask::MODIFY)
+                .add(path.parent().unwrap(), WatchMask::MODIFY)
             {
                 warn!(
                     "Failed to create file change listener for path: {}\n {}",

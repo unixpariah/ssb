@@ -90,7 +90,12 @@ struct StatusBar {
     draw: mpsc::Receiver<bool>,
     cache: HashMap<i32, RgbImage>,
     dispatch: bool,
+    hot_config: HotConfig,
+}
+
+struct HotConfig {
     config: config::Config,
+    listener: broadcast::Receiver<bool>,
 }
 
 impl StatusBar {
@@ -135,7 +140,10 @@ impl StatusBar {
                         )
                     }
                     Cmd::Backlight(format, _) => match get_backlight_path() {
-                        Ok(path) => (listeners.new_file_change_listener(&path), format.as_str()),
+                        Ok(path) => (
+                            listeners.new_file_change_listener(&path.join("brightness")),
+                            format.as_str(),
+                        ),
                         Err(_) => {
                             warn!("Backlight not found, deactivating module");
                             return None;
@@ -174,6 +182,12 @@ impl StatusBar {
             })
             .collect();
 
+        let path = dirs::config_dir().unwrap().join("ssb/config.toml");
+        let hot_config = HotConfig {
+            config,
+            listener: listeners.new_file_change_listener(&path),
+        };
+
         listeners.start_listeners();
 
         Self {
@@ -187,7 +201,7 @@ impl StatusBar {
             draw: rx,
             cache: HashMap::new(),
             dispatch: true,
-            config,
+            hot_config,
         }
     }
 
@@ -196,7 +210,14 @@ impl StatusBar {
             return Ok(());
         }
 
-        let font = &self.config.font;
+        let received = self.hot_config.listener.try_recv();
+        let config_changed = received.is_ok();
+        if config_changed {
+            self.hot_config.config = get_config().unwrap_or_else(|_| toml::from_str(TOML).unwrap());
+        }
+
+        let config = &self.hot_config.config;
+        let font = &config.font;
 
         let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0)?;
         let context = cairo::Context::new(&surface)?;
@@ -215,11 +236,11 @@ impl StatusBar {
             .information
             .par_iter_mut()
             .map(|info| {
-                if info.receiver.try_recv().is_ok() || info.output.is_empty() {
+                if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
                     let output =
-                        get_command_output(&info.command).unwrap_or(self.config.unkown.to_string());
+                        get_command_output(&info.command).unwrap_or(config.unkown.to_string());
 
-                    if output != info.output {
+                    if output != info.output || config_changed {
                         let format = info.format.replace("%s", &output);
                         let format = match &info.command {
                             Cmd::Battery(_, _, icons)
@@ -248,13 +269,14 @@ impl StatusBar {
 
                         let (width, height) = info.cache.img.dimensions();
                         let width = if (extents.width() + extents.x_bearing().abs()) as u32 > width
+                            && !config_changed
                         {
                             extents.width() as u32
                         } else {
                             width
                         };
 
-                        let height = if extents.height() as u32 > height {
+                        let height = if extents.height() as u32 > height && !config_changed {
                             extents.height() as u32
                         } else {
                             height
@@ -276,7 +298,7 @@ impl StatusBar {
                                 return false;
                             }
                         };
-                        set_info_context(&context, extents, &self.config);
+                        set_info_context(&context, extents, config);
 
                         _ = context.show_text(&format);
 
@@ -298,7 +320,7 @@ impl StatusBar {
             .reduce_with(|a, b| if b { b } else { a })
             .unwrap_or(false);
 
-        if unchanged {
+        if unchanged && !config_changed {
             self.dispatch = false;
             return Ok(());
         }
@@ -306,7 +328,33 @@ impl StatusBar {
         self.cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
-            let height = self.config.height;
+            let height = config.height;
+
+            if config_changed {
+                let img_surface =
+                    ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
+                let context = Context::new(&img_surface).unwrap();
+
+                let background = config.background;
+                let font = &config.font;
+
+                context.set_source_rgb(
+                    background[0] as f64 / 255.0,
+                    background[1] as f64 / 255.0,
+                    background[2] as f64 / 255.0,
+                );
+                _ = context.paint();
+                context.set_source_rgb(
+                    font.color[0] as f64 / 255.0,
+                    font.color[1] as f64 / 255.0,
+                    font.color[2] as f64 / 255.0,
+                );
+
+                let mut background = Vec::new();
+                _ = img_surface.write_to_png(&mut background);
+
+                surface.background = image::load_from_memory(&background).unwrap();
+            }
 
             if self.cache.get(&width).is_none() {
                 let background = &mut surface.background;
@@ -370,9 +418,10 @@ impl OutputHandler for StatusBar {
         );
 
         if let Some(info) = self.output_state.info(&output) {
-            let height = self.config.height;
+            let config = &self.hot_config.config;
+            let height = config.height;
             if let Some((width, _)) = info.logical_size {
-                layer.set_anchor(match self.config.topbar {
+                layer.set_anchor(match config.topbar {
                     true => Anchor::TOP,
                     false => Anchor::BOTTOM,
                 });
@@ -385,8 +434,8 @@ impl OutputHandler for StatusBar {
                     ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
 
-                let background = self.config.background;
-                let font = &self.config.font;
+                let background = config.background;
+                let font = &config.font;
 
                 context.set_source_rgb(
                     background[0] as f64 / 255.0,
@@ -399,16 +448,6 @@ impl OutputHandler for StatusBar {
                     font.color[1] as f64 / 255.0,
                     font.color[2] as f64 / 255.0,
                 );
-                context.select_font_face(
-                    &font.family,
-                    cairo::FontSlant::Normal,
-                    if font.bold {
-                        cairo::FontWeight::Bold
-                    } else {
-                        cairo::FontWeight::Normal
-                    },
-                );
-                context.set_font_size(font.size);
 
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);
@@ -541,7 +580,7 @@ async fn main() {
     let mut status_bar = StatusBar::new(&globals, &qh, rx);
     let mut skip = true;
 
-    let receivers = status_bar
+    let mut receivers = status_bar
         .information
         .iter_mut()
         .map(|info| {
@@ -550,9 +589,15 @@ async fn main() {
         })
         .collect::<Vec<_>>();
 
-    if !receivers.is_empty() {
-        setup_listeners(receivers, tx).await;
+    {
+        let (tx, rx) = broadcast::channel(1);
+        receivers.push((
+            std::mem::replace(&mut status_bar.hot_config.listener, rx),
+            tx,
+        ))
     }
+
+    setup_listeners(receivers, tx).await;
 
     loop {
         status_bar.draw().expect("Failed to draw");
