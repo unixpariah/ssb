@@ -45,7 +45,7 @@ Or if you want specific github revision
       pkg = import (fetchGit {
         url = "https://github.com/unixpariah/ssb.git";
         ref = "main";
-        rev = "revision hash"
+        rev = "revision hash";
       }) {};
     in
       pkg.overrideAttrs (oldAttrs: {

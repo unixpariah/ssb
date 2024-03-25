@@ -4,7 +4,7 @@ mod util;
 
 use cairo::{Context, ImageSurface};
 use config::get_config;
-use image::{imageops, ColorType, DynamicImage, RgbImage};
+use image::{imageops, ColorType, DynamicImage, GenericImageView, RgbImage};
 use log::{info, warn, LevelFilter};
 use modules::{
     backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
@@ -60,19 +60,12 @@ struct Surface {
 
 struct ImgCache {
     img: DynamicImage,
-    width: i32,
-    height: i32,
     unchanged: bool,
 }
 
 impl ImgCache {
-    fn new(img: DynamicImage, width: i32, height: i32, unchanged: bool) -> Self {
-        Self {
-            img,
-            width,
-            height,
-            unchanged,
-        }
+    fn new(img: DynamicImage, unchanged: bool) -> Self {
+        Self { img, unchanged }
     }
 }
 
@@ -176,7 +169,7 @@ impl StatusBar {
                     y: module.y,
                     format: format.to_string(),
                     receiver,
-                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
+                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
                 })
             })
             .collect();
@@ -205,8 +198,8 @@ impl StatusBar {
 
         let font = &self.config.font;
 
-        let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0).unwrap();
-        let context = cairo::Context::new(&surface).unwrap();
+        let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0)?;
+        let context = cairo::Context::new(&surface)?;
 
         context.select_font_face(
             &font.family,
@@ -252,25 +245,31 @@ impl StatusBar {
                                 return false;
                             }
                         };
-                        let width = if extents.width() as i32 > info.cache.width {
-                            extents.width() as i32
+
+                        let (width, height) = info.cache.img.dimensions();
+                        let width = if (extents.width() + extents.x_bearing().abs()) as u32 > width
+                        {
+                            extents.width() as u32
                         } else {
-                            info.cache.width
+                            width
                         };
 
-                        let height = if extents.height() as i32 > info.cache.height {
-                            extents.height() as i32
+                        let height = if extents.height() as u32 > height {
+                            extents.height() as u32
                         } else {
-                            info.cache.height
+                            height
                         };
 
-                        let surface =
-                            match ImageSurface::create(cairo::Format::Rgb30, width, height) {
-                                Ok(surface) => surface,
-                                Err(_) => {
-                                    return false;
-                                }
-                            };
+                        let surface = match ImageSurface::create(
+                            cairo::Format::Rgb30,
+                            width as i32,
+                            height as i32,
+                        ) {
+                            Ok(surface) => surface,
+                            Err(_) => {
+                                return false;
+                            }
+                        };
                         let context = match cairo::Context::new(&surface) {
                             Ok(context) => context,
                             Err(_) => {
@@ -285,7 +284,7 @@ impl StatusBar {
                         _ = surface.write_to_png(&mut img);
 
                         if let Ok(img) = image::load_from_memory(&img) {
-                            info.cache = ImgCache::new(img, width, height, false);
+                            info.cache = ImgCache::new(img, false);
                         }
 
                         info.output = output;
@@ -316,12 +315,12 @@ impl StatusBar {
                         return;
                     }
 
-                    let img = &info.cache;
+                    let img_cache = &info.cache;
                     imageops::overlay(
                         background,
-                        &img.img,
+                        &img_cache.img,
                         info.x as i64,
-                        info.y as i64 - img.height as i64 / 2,
+                        info.y as i64 - img_cache.img.height() as i64 / 2,
                     );
                 });
 
