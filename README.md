@@ -60,7 +60,6 @@ Or if you want specific github revision
 The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on first run.
 
 ## TODO
-- [ ] Finish hot realoadable configuration
 - [ ] Add sway support (and other compositors as well)
 - [ ] Add better styling
 - [ ] Fix crashing when new output is added

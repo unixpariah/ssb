@@ -53,7 +53,7 @@ pub fn get_context(font: &Font) -> Context {
     context
 }
 
-pub fn update_modules(
+pub fn update_config(
     information: &mut Vec<ModuleData>,
     config_changed: bool,
     config: &config::Config,

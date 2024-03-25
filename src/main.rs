@@ -3,7 +3,7 @@ mod modules;
 mod util;
 
 use cairo::{Context, ImageSurface};
-use config::get_config;
+use config::{get_config, Module};
 use image::{imageops, ColorType, DynamicImage, RgbImage};
 use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
@@ -25,7 +25,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{update_modules, TOML},
+    helpers::{update_config, TOML},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -119,73 +119,7 @@ impl StatusBar {
         };
 
         let mut listeners = Listeners::new();
-
-        let information = config
-            .modules
-            .iter()
-            .filter_map(|module| {
-                let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                    Cmd::Memory(_, interval, format) => (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    ),
-                    Cmd::Cpu(interval, format) => (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    ),
-                    Cmd::Battery(interval, format, _) => {
-                        if battery_details().is_err() {
-                            warn!("Battery not found, deactivating module");
-                            return None;
-                        }
-                        (
-                            listeners.new_time_passed_listener(*interval),
-                            format.as_str(),
-                        )
-                    }
-                    Cmd::Backlight(format, _) => match get_backlight_path() {
-                        Ok(path) => (
-                            listeners.new_file_change_listener(&path.join("brightness")),
-                            format.as_str(),
-                        ),
-                        Err(_) => {
-                            warn!("Backlight not found, deactivating module");
-                            return None;
-                        }
-                    },
-                    Cmd::Audio(format, _) => {
-                        (listeners.new_volume_change_listener(), format.as_str())
-                    }
-                    Cmd::Custom(_, trigger, format) => match trigger {
-                        Trigger::WorkspaceChanged => {
-                            (listeners.new_workspace_listener(), format.as_str())
-                        }
-                        Trigger::TimePassed(interval) => (
-                            listeners.new_time_passed_listener(*interval),
-                            format.as_str(),
-                        ),
-                        Trigger::FileChange(path) => {
-                            (listeners.new_file_change_listener(path), format.as_str())
-                        }
-                        Trigger::VolumeChanged => {
-                            (listeners.new_volume_change_listener(), format.as_str())
-                        }
-                    },
-                };
-
-                Some(ModuleData {
-                    output: String::new(),
-                    // TODO: Get rid of this clone
-                    command: module.command.clone(),
-                    x: module.x,
-                    y: module.y,
-                    format: format.to_string(),
-                    receiver,
-                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
-                })
-            })
-            .collect();
+        let information = update_modules(&mut listeners, config.modules.clone());
 
         let path = dirs::config_dir()
             .unwrap()
@@ -232,7 +166,17 @@ impl StatusBar {
                         true => Anchor::TOP,
                         false => Anchor::BOTTOM,
                     });
+                surface
+                    .layer_surface
+                    .set_size(surface.width as u32, self.hot_config.config.height as u32);
+                surface
+                    .layer_surface
+                    .set_exclusive_zone(self.hot_config.config.height);
             });
+            self.information = update_modules(
+                &mut Listeners::new(),
+                self.hot_config.config.modules.clone(),
+            );
             true
         } else {
             false
@@ -254,7 +198,7 @@ impl StatusBar {
             },
         );
         context.set_font_size(font.size);
-        let unchanged = !update_modules(&mut self.information, config_changed, config);
+        let unchanged = !update_config(&mut self.information, config_changed, config);
         if unchanged && !config_changed {
             self.dispatch = false;
             return Ok(());
@@ -587,4 +531,70 @@ fn logger() {
         ColorChoice::AlwaysAnsi,
     )
     .expect("Failed to initialize logger");
+}
+
+fn update_modules(listeners: &mut Listeners, modules: Vec<Module>) -> Vec<ModuleData> {
+    modules
+        .iter()
+        .filter_map(|module| {
+            let (receiver, format) = match &module.command {
+                Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+                Cmd::Memory(_, interval, format) => (
+                    listeners.new_time_passed_listener(*interval),
+                    format.as_str(),
+                ),
+                Cmd::Cpu(interval, format) => (
+                    listeners.new_time_passed_listener(*interval),
+                    format.as_str(),
+                ),
+                Cmd::Battery(interval, format, _) => {
+                    if battery_details().is_err() {
+                        warn!("Battery not found, deactivating module");
+                        return None;
+                    }
+                    (
+                        listeners.new_time_passed_listener(*interval),
+                        format.as_str(),
+                    )
+                }
+                Cmd::Backlight(format, _) => match get_backlight_path() {
+                    Ok(path) => (
+                        listeners.new_file_change_listener(&path.join("brightness")),
+                        format.as_str(),
+                    ),
+                    Err(_) => {
+                        warn!("Backlight not found, deactivating module");
+                        return None;
+                    }
+                },
+                Cmd::Audio(format, _) => (listeners.new_volume_change_listener(), format.as_str()),
+                Cmd::Custom(_, trigger, format) => match trigger {
+                    Trigger::WorkspaceChanged => {
+                        (listeners.new_workspace_listener(), format.as_str())
+                    }
+                    Trigger::TimePassed(interval) => (
+                        listeners.new_time_passed_listener(*interval),
+                        format.as_str(),
+                    ),
+                    Trigger::FileChange(path) => {
+                        (listeners.new_file_change_listener(path), format.as_str())
+                    }
+                    Trigger::VolumeChanged => {
+                        (listeners.new_volume_change_listener(), format.as_str())
+                    }
+                },
+            };
+
+            Some(ModuleData {
+                output: String::new(),
+                // TODO: Get rid of this clone
+                command: module.command.clone(),
+                x: module.x,
+                y: module.y,
+                format: format.to_string(),
+                receiver,
+                cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
+            })
+        })
+        .collect()
 }
