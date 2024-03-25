@@ -4,13 +4,10 @@ mod util;
 
 use cairo::{Context, ImageSurface};
 use config::get_config;
-use image::{imageops, ColorType, DynamicImage, GenericImageView, RgbImage};
+use image::{imageops, ColorType, DynamicImage, RgbImage};
+use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
-use modules::{
-    backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
-    memory::MemoryOpts,
-};
-use rayon::prelude::*;
+use modules::{backlight::get_backlight_path, battery::battery_details, memory::MemoryOpts};
 use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
@@ -28,7 +25,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{get_context, set_info_context, TOML},
+    helpers::{update_modules, TOML},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -98,6 +95,10 @@ struct HotConfig {
     listener: broadcast::Receiver<bool>,
 }
 
+lazy_static! {
+    static ref DEFAULT_CONFIG: config::Config = toml::from_str(TOML).expect("If you see this, please contact lazy ass developer behind this project who did not care to update default config");
+}
+
 impl StatusBar {
     fn new(
         globals: &GlobalList,
@@ -109,9 +110,13 @@ impl StatusBar {
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
-        let config = get_config().unwrap_or_else(|_| {
-            toml::from_str(TOML).expect("If you see this, it means that lazy ass developer did not care to update default config")
-        });
+        let config = match get_config() {
+            Ok(config) => config,
+            Err(_) => {
+                warn!("Configuration file could not be parsed, using default configuration");
+                DEFAULT_CONFIG.to_owned()
+            }
+        };
 
         let mut listeners = Listeners::new();
 
@@ -182,7 +187,9 @@ impl StatusBar {
             })
             .collect();
 
-        let path = dirs::config_dir().unwrap().join("ssb/config.toml");
+        let path = dirs::config_dir()
+            .unwrap()
+            .join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
         let hot_config = HotConfig {
             config,
             listener: listeners.new_file_change_listener(&path),
@@ -211,7 +218,21 @@ impl StatusBar {
         }
 
         let config_changed = if self.hot_config.listener.try_recv().is_ok() {
-            self.hot_config.config = get_config().unwrap_or_else(|_| toml::from_str(TOML).unwrap());
+            self.hot_config.config = match get_config() {
+                Ok(config) => config,
+                Err(_) => {
+                    warn!("Configuration file could not be parsed, using default configuration");
+                    DEFAULT_CONFIG.to_owned()
+                }
+            };
+            self.surfaces.iter_mut().for_each(|surface| {
+                surface
+                    .layer_surface
+                    .set_anchor(match self.hot_config.config.topbar {
+                        true => Anchor::TOP,
+                        false => Anchor::BOTTOM,
+                    });
+            });
             true
         } else {
             false
@@ -327,7 +348,7 @@ impl OutputHandler for StatusBar {
             qh,
             surface,
             Layer::Top,
-            Some("ssb"),
+            Some(env!("CARGO_PKG_NAME")),
             Some(&output),
         );
 
@@ -566,96 +587,4 @@ fn logger() {
         ColorChoice::AlwaysAnsi,
     )
     .expect("Failed to initialize logger");
-}
-
-fn update_modules(
-    information: &mut Vec<ModuleData>,
-    config_changed: bool,
-    config: &config::Config,
-) -> bool {
-    information
-        .par_iter_mut()
-        .map(|info| {
-            if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
-                let output = get_command_output(&info.command).unwrap_or(config.unkown.to_string());
-
-                if output != info.output || config_changed {
-                    let format = info.format.replace("%s", &output);
-                    let format = match &info.command {
-                        Cmd::Battery(_, _, icons)
-                        | Cmd::Backlight(_, icons)
-                        | Cmd::Audio(_, icons)
-                            if !icons.is_empty() =>
-                        {
-                            if let Ok(output) = output.parse::<usize>() {
-                                let range_size = 100 / icons.len();
-                                let icon =
-                                    &icons[std::cmp::min(output / range_size, icons.len() - 1)];
-                                format.replace("%c", icon)
-                            } else {
-                                format.replace("%c", "")
-                            }
-                        }
-                        _ => format,
-                    };
-                    let context = get_context(&config.font);
-                    let extents = match context.text_extents(&format) {
-                        Ok(extents) => extents,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-
-                    let (width, height) = info.cache.img.dimensions();
-                    let width = if (extents.width() + extents.x_bearing().abs()) as u32 > width
-                        || config_changed
-                    {
-                        extents.width() as u32
-                    } else {
-                        width
-                    };
-
-                    let height = if extents.height() as u32 > height || config_changed {
-                        extents.height() as u32
-                    } else {
-                        height
-                    };
-
-                    let surface = match ImageSurface::create(
-                        cairo::Format::Rgb30,
-                        width as i32,
-                        height as i32,
-                    ) {
-                        Ok(surface) => surface,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    let context = match cairo::Context::new(&surface) {
-                        Ok(context) => context,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    set_info_context(&context, extents, config);
-
-                    _ = context.show_text(&format);
-
-                    let mut img = Vec::new();
-                    _ = surface.write_to_png(&mut img);
-
-                    if let Ok(img) = image::load_from_memory(&img) {
-                        info.cache = ImgCache::new(img, false);
-                    }
-
-                    info.output = output;
-                    return true;
-                }
-            };
-
-            info.cache.unchanged = true;
-            false
-        })
-        .reduce_with(|a, b| if b { b } else { a })
-        .unwrap_or(false)
 }

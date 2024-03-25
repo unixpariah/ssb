@@ -11,7 +11,7 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
             return Err("".into());
         }
     };
-    let config_path = config_dir.join("ssb/config.toml");
+    let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
 
     if !config_path.exists() {
         info!(
@@ -27,7 +27,7 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
     Ok(toml::from_str::<Config>(file.trim())?)
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: String,
@@ -59,7 +59,7 @@ fn height() -> i32 {
     40
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Module {
     pub command: Cmd,
     #[serde(default = "pos")]
@@ -72,7 +72,7 @@ fn pos() -> f64 {
     0.0
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct Font {
     #[serde(default = "family")]
     pub family: String,
