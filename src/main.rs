@@ -82,8 +82,7 @@ pub struct ModuleData {
     x: f64,
     y: f64,
     format: String,
-    receiver: Option<broadcast::Receiver<bool>>,
-    redraw: Option<mpsc::Receiver<bool>>,
+    receiver: broadcast::Receiver<bool>,
     cache: ImgCache,
 }
 
@@ -169,8 +168,6 @@ impl StatusBar {
                     },
                 };
 
-                let receiver = Some(receiver);
-
                 Some(ModuleData {
                     output: String::new(),
                     // TODO: Get rid of this clone
@@ -179,7 +176,6 @@ impl StatusBar {
                     y: module.y,
                     format: format.to_string(),
                     receiver,
-                    redraw: None,
                     cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), 0, 0, false),
                 })
             })
@@ -226,78 +222,76 @@ impl StatusBar {
             .information
             .par_iter_mut()
             .map(|info| {
-                if let Some(redraw) = &info.redraw {
-                    if redraw.try_recv().is_ok() || info.output.is_empty() {
-                        let output = get_command_output(&info.command)
-                            .unwrap_or(self.config.unkown.to_string());
+                if info.receiver.try_recv().is_ok() || info.output.is_empty() {
+                    let output =
+                        get_command_output(&info.command).unwrap_or(self.config.unkown.to_string());
 
-                        if output != info.output {
-                            let format = info.format.replace("%s", &output);
-                            let format = match &info.command {
-                                Cmd::Battery(_, _, icons)
-                                | Cmd::Backlight(_, icons)
-                                | Cmd::Audio(_, icons)
-                                    if !icons.is_empty() =>
-                                {
-                                    if let Ok(output) = output.parse::<usize>() {
-                                        let range_size = 100 / icons.len();
-                                        let icon = &icons
-                                            [std::cmp::min(output / range_size, icons.len() - 1)];
-                                        format.replace("%c", icon)
-                                    } else {
-                                        format.replace("%c", "")
-                                    }
+                    if output != info.output {
+                        let format = info.format.replace("%s", &output);
+                        let format = match &info.command {
+                            Cmd::Battery(_, _, icons)
+                            | Cmd::Backlight(_, icons)
+                            | Cmd::Audio(_, icons)
+                                if !icons.is_empty() =>
+                            {
+                                if let Ok(output) = output.parse::<usize>() {
+                                    let range_size = 100 / icons.len();
+                                    let icon =
+                                        &icons[std::cmp::min(output / range_size, icons.len() - 1)];
+                                    format.replace("%c", icon)
+                                } else {
+                                    format.replace("%c", "")
                                 }
-                                _ => format,
-                            };
-                            let context = get_context(font);
-                            let extents = match context.text_extents(&format) {
-                                Ok(extents) => extents,
-                                Err(_) => {
-                                    return false;
-                                }
-                            };
-                            let width = if extents.width() as i32 > info.cache.width {
-                                extents.width() as i32
-                            } else {
-                                info.cache.width
-                            };
-
-                            let height = if extents.height() as i32 > info.cache.height {
-                                extents.height() as i32
-                            } else {
-                                info.cache.height
-                            };
-
-                            let surface =
-                                match ImageSurface::create(cairo::Format::Rgb30, width, height) {
-                                    Ok(surface) => surface,
-                                    Err(_) => {
-                                        return false;
-                                    }
-                                };
-                            let context = match cairo::Context::new(&surface) {
-                                Ok(context) => context,
-                                Err(_) => {
-                                    return false;
-                                }
-                            };
-                            set_info_context(&context, extents, &self.config);
-
-                            _ = context.show_text(&format);
-
-                            let mut img = Vec::new();
-                            _ = surface.write_to_png(&mut img);
-
-                            if let Ok(img) = image::load_from_memory(&img) {
-                                info.cache = ImgCache::new(img, width, height, false);
                             }
+                            _ => format,
+                        };
+                        let context = get_context(font);
+                        let extents = match context.text_extents(&format) {
+                            Ok(extents) => extents,
+                            Err(_) => {
+                                return false;
+                            }
+                        };
+                        let width = if extents.width() as i32 > info.cache.width {
+                            extents.width() as i32
+                        } else {
+                            info.cache.width
+                        };
 
-                            info.output = output;
-                            return true;
+                        let height = if extents.height() as i32 > info.cache.height {
+                            extents.height() as i32
+                        } else {
+                            info.cache.height
+                        };
+
+                        let surface =
+                            match ImageSurface::create(cairo::Format::Rgb30, width, height) {
+                                Ok(surface) => surface,
+                                Err(_) => {
+                                    return false;
+                                }
+                            };
+                        let context = match cairo::Context::new(&surface) {
+                            Ok(context) => context,
+                            Err(_) => {
+                                return false;
+                            }
+                        };
+                        set_info_context(&context, extents, &self.config);
+
+                        _ = context.show_text(&format);
+
+                        let mut img = Vec::new();
+                        _ = surface.write_to_png(&mut img);
+
+                        if let Ok(img) = image::load_from_memory(&img) {
+                            info.cache = ImgCache::new(img, width, height, false);
                         }
-                    };
-                }
+
+                        info.output = output;
+                        return true;
+                    }
+                };
 
                 info.cache.unchanged = true;
                 false
@@ -519,15 +513,14 @@ impl ShmHandler for StatusBar {
 }
 
 async fn setup_listeners(
-    listeners: Vec<(Option<broadcast::Receiver<bool>>, mpsc::Sender<bool>)>,
+    listeners: Vec<(broadcast::Receiver<bool>, broadcast::Sender<bool>)>,
     sender: mpsc::Sender<bool>,
 ) {
     listeners.into_iter().for_each(|mut listener| {
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
-                // Listener is Option just to make it easier to take the value so unwraping is safe
-                if let Ok(message) = listener.0.as_mut().unwrap().recv().await {
+                if let Ok(message) = listener.0.recv().await {
                     _ = sender.send(message);
                     _ = listener.1.send(true);
                 };
@@ -553,9 +546,8 @@ async fn main() {
         .information
         .iter_mut()
         .map(|info| {
-            let (tx, rx) = mpsc::channel();
-            info.redraw = Some(rx);
-            (info.receiver.take(), tx)
+            let (tx, rx) = broadcast::channel(1);
+            (std::mem::replace(&mut info.receiver, rx), tx)
         })
         .collect::<Vec<_>>();
 

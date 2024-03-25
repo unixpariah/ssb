@@ -43,7 +43,7 @@ Or if you want specific github revision
 ```nix
     (let
       pkg = import (fetchGit {
-        url = "https://github.com/unixpariah/ssb/.git";
+        url = "https://github.com/unixpariah/ssb.git";
         ref = "main";
         rev = "revision hash"
       }) {};
