@@ -690,4 +690,69 @@ pub fn update_styles(
 
 fn update_modules(modules: &[Module], current_modules: &mut Vec<ModuleData>) {
     current_modules.retain(|module| modules.iter().any(|m| m.command == module.command));
+    let new_modules: Vec<Module> = modules
+        .iter()
+        .filter(|module| !current_modules.iter().any(|m| m.command == module.command))
+        .cloned()
+        .collect();
+
+    let mut listeners = Listeners::new();
+    new_modules.iter().try_for_each(|module| {
+        let (receiver, format) = match &module.command {
+            Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+            Cmd::Memory(_, interval, format) => (
+                listeners.new_time_passed_listener(*interval),
+                format.as_str(),
+            ),
+            Cmd::Cpu(interval, format) => (
+                listeners.new_time_passed_listener(*interval),
+                format.as_str(),
+            ),
+            Cmd::Battery(interval, format, _) => {
+                if battery_details().is_err() {
+                    warn!("Battery not found, deactivating module");
+                    return None;
+                }
+                (
+                    listeners.new_time_passed_listener(*interval),
+                    format.as_str(),
+                )
+            }
+            Cmd::Backlight(format, _) => match get_backlight_path() {
+                Ok(path) => (
+                    listeners.new_file_change_listener(&path.join("brightness")),
+                    format.as_str(),
+                ),
+                Err(_) => {
+                    warn!("Backlight not found, deactivating module");
+                    return None;
+                }
+            },
+            Cmd::Audio(format, _) => (listeners.new_volume_change_listener(), format.as_str()),
+            Cmd::Custom(_, trigger, format) => match trigger {
+                Trigger::WorkspaceChanged => (listeners.new_workspace_listener(), format.as_str()),
+                Trigger::TimePassed(interval) => (
+                    listeners.new_time_passed_listener(*interval),
+                    format.as_str(),
+                ),
+                Trigger::FileChange(path) => {
+                    (listeners.new_file_change_listener(path), format.as_str())
+                }
+                Trigger::VolumeChanged => (listeners.new_volume_change_listener(), format.as_str()),
+            },
+        };
+
+        current_modules.push(ModuleData {
+            output: String::new(),
+            // TODO: Get rid of this clone
+            command: module.command.clone(),
+            x: module.x,
+            y: module.y,
+            format: format.to_string(),
+            receiver,
+            cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
+        });
+
+        Some(())
+    });
 }
