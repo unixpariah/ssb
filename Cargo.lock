@@ -1055,7 +1055,6 @@ dependencies = [
  "hyprland",
  "image",
  "inotify",
- "lazy_static",
  "libpulse-binding",
  "log",
  "rayon",

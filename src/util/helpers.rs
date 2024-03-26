@@ -1,11 +1,5 @@
-use crate::{
-    config::{self, Font},
-    modules::custom::get_command_output,
-    Cmd, ImgCache, ModuleData,
-};
+use crate::config::Font;
 use cairo::{Context, ImageSurface, TextExtents};
-use image::GenericImageView;
-use rayon::prelude::*;
 
 pub fn set_info_context(context: &Context, extents: TextExtents, config: &crate::config::Config) {
     let background = config.background;
@@ -51,98 +45,6 @@ pub fn get_context(font: &Font) -> Context {
     );
     context.set_font_size(font.size);
     context
-}
-
-pub fn update_config(
-    information: &mut Vec<ModuleData>,
-    config_changed: bool,
-    config: &config::Config,
-) -> bool {
-    information
-        .par_iter_mut()
-        .map(|info| {
-            if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
-                let output = get_command_output(&info.command).unwrap_or(config.unkown.to_string());
-
-                if output != info.output || config_changed {
-                    let format = info.format.replace("%s", &output);
-                    let format = match &info.command {
-                        Cmd::Battery(_, _, icons)
-                        | Cmd::Backlight(_, icons)
-                        | Cmd::Audio(_, icons)
-                            if !icons.is_empty() =>
-                        {
-                            if let Ok(output) = output.parse::<usize>() {
-                                let range_size = 100 / icons.len();
-                                let icon =
-                                    &icons[std::cmp::min(output / range_size, icons.len() - 1)];
-                                format.replace("%c", icon)
-                            } else {
-                                format.replace("%c", "")
-                            }
-                        }
-                        _ => format,
-                    };
-                    let context = get_context(&config.font);
-                    let extents = match context.text_extents(&format) {
-                        Ok(extents) => extents,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-
-                    let (width, height) = info.cache.img.dimensions();
-                    let width = if (extents.width() + extents.x_bearing().abs()) as u32 > width
-                        || config_changed
-                    {
-                        extents.width() as u32
-                    } else {
-                        width
-                    };
-
-                    let height = if extents.height() as u32 > height || config_changed {
-                        extents.height() as u32
-                    } else {
-                        height
-                    };
-
-                    let surface = match ImageSurface::create(
-                        cairo::Format::Rgb30,
-                        width as i32,
-                        height as i32,
-                    ) {
-                        Ok(surface) => surface,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    let context = match cairo::Context::new(&surface) {
-                        Ok(context) => context,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    set_info_context(&context, extents, config);
-
-                    _ = context.show_text(&format);
-
-                    let mut img = Vec::new();
-                    _ = surface.write_to_png(&mut img);
-
-                    if let Ok(img) = image::load_from_memory(&img) {
-                        info.cache = ImgCache::new(img, false);
-                    }
-
-                    info.output = output;
-                    return true;
-                }
-            };
-
-            info.cache.unchanged = true;
-            false
-        })
-        .reduce_with(|a, b| if b { b } else { a })
-        .unwrap_or(false)
 }
 
 pub const TOML: &str = r#"# Basic configurations

@@ -3,7 +3,7 @@ use sysinfo::System;
 
 use std::error::Error;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum MemoryOpts {
     Used,
     Free,

@@ -4,10 +4,13 @@ mod util;
 
 use cairo::{Context, ImageSurface};
 use config::{get_config, Module};
-use image::{imageops, ColorType, DynamicImage, RgbImage};
-use lazy_static::lazy_static;
+use image::{imageops, ColorType, DynamicImage, GenericImageView, RgbImage};
 use log::{info, warn, LevelFilter};
-use modules::{backlight::get_backlight_path, battery::battery_details, memory::MemoryOpts};
+use modules::{
+    backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
+    memory::MemoryOpts,
+};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
@@ -25,7 +28,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{update_config, TOML},
+    helpers::{get_context, set_info_context, TOML},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -35,7 +38,7 @@ use wayland_client::{
 };
 
 // TODO: make these vecs of strings optional
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Cmd {
     Custom(String, Trigger, String),
     Workspaces([String; 2]),
@@ -95,9 +98,7 @@ struct HotConfig {
     listener: broadcast::Receiver<bool>,
 }
 
-lazy_static! {
-    static ref DEFAULT_CONFIG: config::Config = toml::from_str(TOML).expect("If you see this, please contact lazy ass developer behind this project who did not care to update default config");
-}
+static MESSAGE: &str = "If you see this, please contact lazy ass developer behind this project who did not care to update default config";
 
 impl StatusBar {
     fn new(
@@ -114,12 +115,77 @@ impl StatusBar {
             Ok(config) => config,
             Err(_) => {
                 warn!("Configuration file could not be parsed, using default configuration");
-                DEFAULT_CONFIG.to_owned()
+                toml::from_str(TOML).expect(MESSAGE)
             }
         };
 
         let mut listeners = Listeners::new();
-        let information = update_modules(&mut listeners, config.modules.clone());
+        let information = config
+            .modules
+            .iter()
+            .filter_map(|module| {
+                let (receiver, format) = match &module.command {
+                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+                    Cmd::Memory(_, interval, format) => (
+                        listeners.new_time_passed_listener(*interval),
+                        format.as_str(),
+                    ),
+                    Cmd::Cpu(interval, format) => (
+                        listeners.new_time_passed_listener(*interval),
+                        format.as_str(),
+                    ),
+                    Cmd::Battery(interval, format, _) => {
+                        if battery_details().is_err() {
+                            warn!("Battery not found, deactivating module");
+                            return None;
+                        }
+                        (
+                            listeners.new_time_passed_listener(*interval),
+                            format.as_str(),
+                        )
+                    }
+                    Cmd::Backlight(format, _) => match get_backlight_path() {
+                        Ok(path) => (
+                            listeners.new_file_change_listener(&path.join("brightness")),
+                            format.as_str(),
+                        ),
+                        Err(_) => {
+                            warn!("Backlight not found, deactivating module");
+                            return None;
+                        }
+                    },
+                    Cmd::Audio(format, _) => {
+                        (listeners.new_volume_change_listener(), format.as_str())
+                    }
+                    Cmd::Custom(_, trigger, format) => match trigger {
+                        Trigger::WorkspaceChanged => {
+                            (listeners.new_workspace_listener(), format.as_str())
+                        }
+                        Trigger::TimePassed(interval) => (
+                            listeners.new_time_passed_listener(*interval),
+                            format.as_str(),
+                        ),
+                        Trigger::FileChange(path) => {
+                            (listeners.new_file_change_listener(path), format.as_str())
+                        }
+                        Trigger::VolumeChanged => {
+                            (listeners.new_volume_change_listener(), format.as_str())
+                        }
+                    },
+                };
+
+                Some(ModuleData {
+                    output: String::new(),
+                    // TODO: Get rid of this clone
+                    command: module.command.clone(),
+                    x: module.x,
+                    y: module.y,
+                    format: format.to_string(),
+                    receiver,
+                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
+                })
+            })
+            .collect();
 
         let path = dirs::config_dir()
             .unwrap()
@@ -156,7 +222,7 @@ impl StatusBar {
                 Ok(config) => config,
                 Err(_) => {
                     warn!("Configuration file could not be parsed, using default configuration");
-                    DEFAULT_CONFIG.to_owned()
+                    toml::from_str(TOML).expect(MESSAGE)
                 }
             };
             self.surfaces.iter_mut().for_each(|surface| {
@@ -173,10 +239,7 @@ impl StatusBar {
                     .layer_surface
                     .set_exclusive_zone(self.hot_config.config.height);
             });
-            self.information = update_modules(
-                &mut Listeners::new(),
-                self.hot_config.config.modules.clone(),
-            );
+            update_modules(&self.hot_config.config.modules, &mut self.information);
             true
         } else {
             false
@@ -198,7 +261,7 @@ impl StatusBar {
             },
         );
         context.set_font_size(font.size);
-        let unchanged = !update_config(&mut self.information, config_changed, config);
+        let unchanged = update_styles(&mut self.information, config_changed, config);
         if unchanged && !config_changed {
             self.dispatch = false;
             return Ok(());
@@ -533,68 +596,98 @@ fn logger() {
     .expect("Failed to initialize logger");
 }
 
-fn update_modules(listeners: &mut Listeners, modules: Vec<Module>) -> Vec<ModuleData> {
-    modules
-        .iter()
-        .filter_map(|module| {
-            let (receiver, format) = match &module.command {
-                Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                Cmd::Memory(_, interval, format) => (
-                    listeners.new_time_passed_listener(*interval),
-                    format.as_str(),
-                ),
-                Cmd::Cpu(interval, format) => (
-                    listeners.new_time_passed_listener(*interval),
-                    format.as_str(),
-                ),
-                Cmd::Battery(interval, format, _) => {
-                    if battery_details().is_err() {
-                        warn!("Battery not found, deactivating module");
-                        return None;
+pub fn update_styles(
+    information: &mut Vec<ModuleData>,
+    config_changed: bool,
+    config: &config::Config,
+) -> bool {
+    !information
+        .par_iter_mut()
+        .map(|info| {
+            if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
+                let output = get_command_output(&info.command).unwrap_or(config.unkown.to_string());
+
+                if output != info.output || config_changed {
+                    let format = info.format.replace("%s", &output);
+                    let format = match &info.command {
+                        Cmd::Battery(_, _, icons)
+                        | Cmd::Backlight(_, icons)
+                        | Cmd::Audio(_, icons)
+                            if !icons.is_empty() =>
+                        {
+                            if let Ok(output) = output.parse::<usize>() {
+                                let range_size = 100 / icons.len();
+                                let icon =
+                                    &icons[std::cmp::min(output / range_size, icons.len() - 1)];
+                                format.replace("%c", icon)
+                            } else {
+                                format.replace("%c", "")
+                            }
+                        }
+                        _ => format,
+                    };
+                    let context = get_context(&config.font);
+                    let extents = match context.text_extents(&format) {
+                        Ok(extents) => extents,
+                        Err(_) => {
+                            return false;
+                        }
+                    };
+
+                    let (width, height) = info.cache.img.dimensions();
+                    let width = if (extents.width() + extents.x_bearing().abs()) as u32 > width
+                        || config_changed
+                    {
+                        extents.width() as u32
+                    } else {
+                        width
+                    };
+
+                    let height = if extents.height() as u32 > height || config_changed {
+                        extents.height() as u32
+                    } else {
+                        height
+                    };
+
+                    let surface = match ImageSurface::create(
+                        cairo::Format::Rgb30,
+                        width as i32,
+                        height as i32,
+                    ) {
+                        Ok(surface) => surface,
+                        Err(_) => {
+                            return false;
+                        }
+                    };
+                    let context = match cairo::Context::new(&surface) {
+                        Ok(context) => context,
+                        Err(_) => {
+                            return false;
+                        }
+                    };
+                    set_info_context(&context, extents, config);
+
+                    _ = context.show_text(&format);
+
+                    let mut img = Vec::new();
+                    _ = surface.write_to_png(&mut img);
+
+                    if let Ok(img) = image::load_from_memory(&img) {
+                        info.cache = ImgCache::new(img, false);
                     }
-                    (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    )
+
+                    info.output = output;
+                    return true;
                 }
-                Cmd::Backlight(format, _) => match get_backlight_path() {
-                    Ok(path) => (
-                        listeners.new_file_change_listener(&path.join("brightness")),
-                        format.as_str(),
-                    ),
-                    Err(_) => {
-                        warn!("Backlight not found, deactivating module");
-                        return None;
-                    }
-                },
-                Cmd::Audio(format, _) => (listeners.new_volume_change_listener(), format.as_str()),
-                Cmd::Custom(_, trigger, format) => match trigger {
-                    Trigger::WorkspaceChanged => {
-                        (listeners.new_workspace_listener(), format.as_str())
-                    }
-                    Trigger::TimePassed(interval) => (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    ),
-                    Trigger::FileChange(path) => {
-                        (listeners.new_file_change_listener(path), format.as_str())
-                    }
-                    Trigger::VolumeChanged => {
-                        (listeners.new_volume_change_listener(), format.as_str())
-                    }
-                },
             };
 
-            Some(ModuleData {
-                output: String::new(),
-                // TODO: Get rid of this clone
-                command: module.command.clone(),
-                x: module.x,
-                y: module.y,
-                format: format.to_string(),
-                receiver,
-                cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
-            })
+            info.cache.unchanged = true;
+            false
         })
-        .collect()
+        .reduce_with(|a, b| if b { b } else { a })
+        .unwrap_or(false)
+}
+
+fn update_modules(modules: &[Module], current_modules: &mut Vec<ModuleData>) {
+    current_modules.retain(|module| modules.iter().any(|m| m.command == module.command));
 }
