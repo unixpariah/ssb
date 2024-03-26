@@ -33,6 +33,7 @@ pub struct WorkspaceListenerData {
     listener: WorkspaceListener,
 }
 
+#[derive(Debug)]
 pub struct TimeListenerData {
     tx: broadcast::Sender<bool>,
     interval: u64,
@@ -59,6 +60,13 @@ impl Listeners {
             time_passed_listener: Arc::new(Mutex::new(Vec::new())),
             volume_change_listener: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.file_change_listener = Arc::new(Mutex::new(None));
+        self.workspace_listener = Arc::new(Mutex::new(None));
+        self.time_passed_listener = Arc::new(Mutex::new(Vec::new()));
+        self.volume_change_listener = Arc::new(Mutex::new(None));
     }
 
     pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {

@@ -91,6 +91,7 @@ struct StatusBar {
     cache: HashMap<i32, RgbImage>,
     dispatch: bool,
     hot_config: HotConfig,
+    listeners: Listeners,
 }
 
 struct HotConfig {
@@ -120,72 +121,8 @@ impl StatusBar {
         };
 
         let mut listeners = Listeners::new();
-        let information = config
-            .modules
-            .iter()
-            .filter_map(|module| {
-                let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                    Cmd::Memory(_, interval, format) => (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    ),
-                    Cmd::Cpu(interval, format) => (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    ),
-                    Cmd::Battery(interval, format, _) => {
-                        if battery_details().is_err() {
-                            warn!("Battery not found, deactivating module");
-                            return None;
-                        }
-                        (
-                            listeners.new_time_passed_listener(*interval),
-                            format.as_str(),
-                        )
-                    }
-                    Cmd::Backlight(format, _) => match get_backlight_path() {
-                        Ok(path) => (
-                            listeners.new_file_change_listener(&path.join("brightness")),
-                            format.as_str(),
-                        ),
-                        Err(_) => {
-                            warn!("Backlight not found, deactivating module");
-                            return None;
-                        }
-                    },
-                    Cmd::Audio(format, _) => {
-                        (listeners.new_volume_change_listener(), format.as_str())
-                    }
-                    Cmd::Custom(_, trigger, format) => match trigger {
-                        Trigger::WorkspaceChanged => {
-                            (listeners.new_workspace_listener(), format.as_str())
-                        }
-                        Trigger::TimePassed(interval) => (
-                            listeners.new_time_passed_listener(*interval),
-                            format.as_str(),
-                        ),
-                        Trigger::FileChange(path) => {
-                            (listeners.new_file_change_listener(path), format.as_str())
-                        }
-                        Trigger::VolumeChanged => {
-                            (listeners.new_volume_change_listener(), format.as_str())
-                        }
-                    },
-                };
-
-                Some(ModuleData {
-                    output: String::new(),
-                    // TODO: Get rid of this clone
-                    command: module.command.clone(),
-                    x: module.x,
-                    y: module.y,
-                    format: format.to_string(),
-                    receiver,
-                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
-                })
-            })
-            .collect();
+        let mut information = Vec::new();
+        update_modules(&config.modules, &mut information, &mut listeners);
 
         let path = dirs::config_dir()
             .unwrap()
@@ -209,6 +146,7 @@ impl StatusBar {
             cache: HashMap::new(),
             dispatch: true,
             hot_config,
+            listeners,
         }
     }
 
@@ -239,7 +177,13 @@ impl StatusBar {
                     .layer_surface
                     .set_exclusive_zone(self.hot_config.config.height);
             });
-            update_modules(&self.hot_config.config.modules, &mut self.information);
+            self.listeners.reset();
+            update_modules(
+                &self.hot_config.config.modules,
+                &mut self.information,
+                &mut self.listeners,
+            );
+            self.listeners.start_listeners();
             true
         } else {
             false
@@ -688,15 +632,22 @@ pub fn update_styles(
         .unwrap_or(false)
 }
 
-fn update_modules(modules: &[Module], current_modules: &mut Vec<ModuleData>) {
-    current_modules.retain(|module| modules.iter().any(|m| m.command == module.command));
+fn update_modules(
+    modules: &[Module],
+    current_modules: &mut Vec<ModuleData>,
+    listeners: &mut Listeners,
+) {
+    current_modules.retain(|module| {
+        modules
+            .iter()
+            .any(|m| m.command == module.command && m.x == module.x && m.y == module.y)
+    });
     let new_modules: Vec<Module> = modules
         .iter()
         .filter(|module| !current_modules.iter().any(|m| m.command == module.command))
         .cloned()
         .collect();
 
-    let mut listeners = Listeners::new();
     new_modules.iter().try_for_each(|module| {
         let (receiver, format) = match &module.command {
             Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
