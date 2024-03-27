@@ -50,6 +50,7 @@ pub struct Listeners {
     pub file_change_listener: Arc<Mutex<Option<FileChangeListenerData>>>,
     pub time_passed_listener: Arc<Mutex<Vec<TimeListenerData>>>,
     pub volume_change_listener: Arc<Mutex<Option<broadcast::Sender<bool>>>>,
+    pub stop_listeners: broadcast::Sender<bool>,
 }
 
 impl Listeners {
@@ -59,6 +60,7 @@ impl Listeners {
             workspace_listener: Arc::new(Mutex::new(None)),
             time_passed_listener: Arc::new(Mutex::new(Vec::new())),
             volume_change_listener: Arc::new(Mutex::new(None)),
+            stop_listeners: broadcast::channel(1).0,
         }
     }
 
@@ -67,6 +69,7 @@ impl Listeners {
         self.workspace_listener = Arc::new(Mutex::new(None));
         self.time_passed_listener = Arc::new(Mutex::new(Vec::new()));
         self.volume_change_listener = Arc::new(Mutex::new(None));
+        broadcast::channel(1).0.send(true).unwrap();
     }
 
     pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {
@@ -121,35 +124,49 @@ impl Listeners {
 
         // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
         // to the listeners whose interval has passed and resets the interval in a loop
+        let listener = self.stop_listeners.subscribe();
         thread::spawn(move || {
+            let mut listener = listener;
             if let Ok(mut time_passed_listener) = time_passed_listener.lock() {
                 if time_passed_listener.is_empty() {
                     return;
                 }
 
                 loop {
+                    if let Ok(stop) = listener.try_recv() {
+                        if stop {
+                            break;
+                        }
+                    }
                     time_passed_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
                     let min_interval = time_passed_listener[0].interval;
                     thread::sleep(std::time::Duration::from_millis(min_interval));
-                    for data in time_passed_listener.iter_mut() {
+                    time_passed_listener.iter_mut().for_each(|data| {
                         if data.interval <= min_interval {
                             _ = data.tx.send(true);
                             data.interval = data.original_interval;
                         } else {
                             data.interval -= min_interval;
                         }
-                    }
+                    });
                 }
             }
         });
 
+        let listener = self.stop_listeners.subscribe();
         thread::spawn(move || {
+            let mut listener = listener;
             if let Ok(mut file_change_listener) = file_change_listener.lock() {
                 if file_change_listener.is_none() {
                     return;
                 }
 
                 loop {
+                    if let Ok(stop) = listener.try_recv() {
+                        if stop {
+                            break;
+                        }
+                    }
                     let mut buffer = [0; 1024];
                     if let Some(file_change_listener) = file_change_listener.as_mut() {
                         if let Ok(events) = file_change_listener
@@ -187,6 +204,7 @@ impl Listeners {
             }
         });
 
+        let mut listener = self.stop_listeners.subscribe();
         thread::spawn(move || {
             let mut mainloop = Mainloop::new().unwrap();
             let mut context = Context::new(&mainloop, "volume-change-listener").unwrap();
@@ -212,7 +230,10 @@ impl Listeners {
             context.subscribe(InterestMaskSet::SINK, |_| {});
 
             loop {
-                thread::sleep(std::time::Duration::from_secs(100));
+                thread::sleep(std::time::Duration::from_millis(100));
+                if listener.try_recv().is_ok() {
+                    break;
+                };
             }
         });
     }
