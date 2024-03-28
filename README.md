@@ -62,4 +62,6 @@ The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on f
 ## TODO
 - [ ] Add sway support (and other compositors as well)
 - [ ] Add better styling
+- [ ] Optimize modules
+- [ ] Add Tray
 - [ ] Fix crashing when new output is added

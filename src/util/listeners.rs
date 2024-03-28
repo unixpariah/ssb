@@ -64,7 +64,7 @@ impl Listeners {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub fn stop_all(&mut self) {
         self.file_change_listener = Arc::new(Mutex::new(None));
         self.workspace_listener = Arc::new(Mutex::new(None));
         self.time_passed_listener = Arc::new(Mutex::new(Vec::new()));

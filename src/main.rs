@@ -149,7 +149,7 @@ impl StatusBar {
         }
     }
 
-    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+    async fn draw(&mut self) -> Result<(), Box<dyn Error>> {
         if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
             return Ok(());
         }
@@ -176,9 +176,27 @@ impl StatusBar {
                     .layer_surface
                     .set_exclusive_zone(self.hot_config.config.height);
             });
-            self.listeners.reset();
+            self.listeners.stop_all();
             self.information = update_modules(&self.hot_config.config.modules, &mut self.listeners);
             self.listeners.start_listeners();
+
+            let (tx, rx) = mpsc::channel();
+            let mut receivers = self
+                .information
+                .iter_mut()
+                .map(|info| {
+                    let (tx, rx) = broadcast::channel(1);
+                    (std::mem::replace(&mut info.receiver, rx), tx)
+                })
+                .collect::<Vec<_>>();
+
+            {
+                let (tx, rx) = broadcast::channel(1);
+                receivers.push((std::mem::replace(&mut self.hot_config.listener, rx), tx))
+            }
+
+            self.draw = rx;
+            setup_listeners(receivers, tx).await;
             true
         } else {
             false
@@ -481,7 +499,7 @@ async fn main() {
     setup_listeners(receivers, tx).await;
 
     loop {
-        status_bar.draw().expect("Failed to draw");
+        status_bar.draw().await.expect("Failed to draw");
         status_bar.surfaces.iter_mut().for_each(|surface| {
             if !surface.configured {
                 surface.configured = true;
