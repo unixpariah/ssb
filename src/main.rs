@@ -128,10 +128,10 @@ impl StatusBar {
             .join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
         let hot_config = HotConfig {
             config,
-            listener: listeners.new_file_change_listener(&path),
+            listener: listeners.new_file_listener(&path),
         };
 
-        listeners.start_listeners();
+        listeners.start_all();
 
         Self {
             compositor_state,
@@ -149,7 +149,7 @@ impl StatusBar {
         }
     }
 
-    async fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
         if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
             return Ok(());
         }
@@ -176,9 +176,11 @@ impl StatusBar {
                     .layer_surface
                     .set_exclusive_zone(self.hot_config.config.height);
             });
-            self.listeners.stop_all();
-            self.information = update_modules(&self.hot_config.config.modules, &mut self.listeners);
-            self.listeners.start_listeners();
+            /*
+                        self.listeners.stop_all();
+                        self.information = update_modules(&self.hot_config.config.modules, &mut self.listeners);
+                        self.listeners.start_all();
+            */
 
             let (tx, rx) = mpsc::channel();
             let mut receivers = self
@@ -196,7 +198,7 @@ impl StatusBar {
             }
 
             self.draw = rx;
-            setup_listeners(receivers, tx).await;
+            setup_listeners(receivers, tx);
             true
         } else {
             false
@@ -449,7 +451,7 @@ impl ShmHandler for StatusBar {
     }
 }
 
-async fn setup_listeners(
+fn setup_listeners(
     listeners: Vec<(broadcast::Receiver<bool>, broadcast::Sender<bool>)>,
     sender: mpsc::Sender<bool>,
 ) {
@@ -496,10 +498,10 @@ async fn main() {
         ))
     }
 
-    setup_listeners(receivers, tx).await;
+    setup_listeners(receivers, tx);
 
     loop {
-        status_bar.draw().await.expect("Failed to draw");
+        status_bar.draw().expect("Failed to draw");
         status_bar.surfaces.iter_mut().for_each(|surface| {
             if !surface.configured {
                 surface.configured = true;
@@ -651,27 +653,22 @@ fn update_modules(modules: &[Module], listeners: &mut Listeners) -> Vec<ModuleDa
         .filter_map(|module| {
             let (receiver, format) = match &module.command {
                 Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                Cmd::Memory(_, interval, format) => (
-                    listeners.new_time_passed_listener(*interval),
-                    format.as_str(),
-                ),
-                Cmd::Cpu(interval, format) => (
-                    listeners.new_time_passed_listener(*interval),
-                    format.as_str(),
-                ),
+                Cmd::Memory(_, interval, format) => {
+                    (listeners.new_time_listener(*interval), format.as_str())
+                }
+                Cmd::Cpu(interval, format) => {
+                    (listeners.new_time_listener(*interval), format.as_str())
+                }
                 Cmd::Battery(interval, format, _) => {
                     if battery_details().is_err() {
                         warn!("Battery not found, deactivating module");
                         return None;
                     }
-                    (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    )
+                    (listeners.new_time_listener(*interval), format.as_str())
                 }
                 Cmd::Backlight(format, _) => match get_backlight_path() {
                     Ok(path) => (
-                        listeners.new_file_change_listener(&path.join("brightness")),
+                        listeners.new_file_listener(&path.join("brightness")),
                         format.as_str(),
                     ),
                     Err(_) => {
@@ -684,12 +681,11 @@ fn update_modules(modules: &[Module], listeners: &mut Listeners) -> Vec<ModuleDa
                     Trigger::WorkspaceChanged => {
                         (listeners.new_workspace_listener(), format.as_str())
                     }
-                    Trigger::TimePassed(interval) => (
-                        listeners.new_time_passed_listener(*interval),
-                        format.as_str(),
-                    ),
+                    Trigger::TimePassed(interval) => {
+                        (listeners.new_time_listener(*interval), format.as_str())
+                    }
                     Trigger::FileChange(path) => {
-                        (listeners.new_file_change_listener(path), format.as_str())
+                        (listeners.new_file_listener(path), format.as_str())
                     }
                     Trigger::VolumeChanged => {
                         (listeners.new_volume_change_listener(), format.as_str())

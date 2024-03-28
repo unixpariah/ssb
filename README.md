@@ -8,8 +8,8 @@ Ssb is a simple status bar for wayland written in rust.
 
 - Compositor implementing the wlr-layer-shell protocol (Hyprland, sway, wayfire, etc.)
 - cairo
-- rust
 - libpulseaudio
+- rust
 
 ## Installation
 
@@ -53,6 +53,28 @@ Or if you want specific github revision
           oldAttrs.buildInputs
           ++ [libpulseaudio];
       }))
+```
+
+### The manual way
+
+1. Clone the repository and cd into it
+
+```sh 
+git clone https://github.com/unixpariah/ssb.git && cd ssb
+```
+
+2. Install necessary dependencies or use nix flake
+
+3. Build the project
+
+```sh
+cargo build --release
+```
+
+4. Run the binary
+
+```sh
+./target/release/ssb
 ```
 
 ## Configuration
