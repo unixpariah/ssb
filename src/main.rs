@@ -170,8 +170,7 @@ impl StatusBar {
 
                 Some(ModuleData {
                     output: String::new(),
-                    // TODO: Get rid of this clone
-                    command: module.command.clone(),
+                    command: module.command.to_owned(),
                     x: module.x,
                     y: module.y,
                     format: format.to_string(),

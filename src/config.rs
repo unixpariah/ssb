@@ -110,3 +110,13 @@ impl Default for Font {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_config() {
+        _ = get_config();
+    }
+}
