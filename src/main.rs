@@ -91,7 +91,6 @@ struct StatusBar {
     cache: HashMap<i32, RgbImage>,
     dispatch: bool,
     hot_config: HotConfig,
-    listeners: Listeners,
 }
 
 struct HotConfig {
@@ -145,7 +144,6 @@ impl StatusBar {
             cache: HashMap::new(),
             dispatch: true,
             hot_config,
-            listeners,
         }
     }
 
@@ -176,29 +174,7 @@ impl StatusBar {
                     .layer_surface
                     .set_exclusive_zone(self.hot_config.config.height);
             });
-            /*
-                        self.listeners.stop_all();
-                        self.information = update_modules(&self.hot_config.config.modules, &mut self.listeners);
-                        self.listeners.start_all();
-            */
 
-            let (tx, rx) = mpsc::channel();
-            let mut receivers = self
-                .information
-                .iter_mut()
-                .map(|info| {
-                    let (tx, rx) = broadcast::channel(1);
-                    (std::mem::replace(&mut info.receiver, rx), tx)
-                })
-                .collect::<Vec<_>>();
-
-            {
-                let (tx, rx) = broadcast::channel(1);
-                receivers.push((std::mem::replace(&mut self.hot_config.listener, rx), tx))
-            }
-
-            self.draw = rx;
-            setup_listeners(receivers, tx);
             true
         } else {
             false

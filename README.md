@@ -86,4 +86,5 @@ The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on f
 - [ ] Add better styling
 - [ ] Optimize modules
 - [ ] Add Tray
+- [ ] Hot configuration modules
 - [ ] Fix crashing when new output is added

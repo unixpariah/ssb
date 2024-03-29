@@ -50,10 +50,6 @@ pub struct Listeners {
     file_listener: Arc<Mutex<Option<FileListenerData>>>,
     time_listener: Arc<Mutex<Vec<TimeListenerData>>>,
     volume_listener: Arc<Mutex<Option<broadcast::Sender<bool>>>>,
-    stop_volume_listener: broadcast::Sender<bool>,
-    stop_time_listener: broadcast::Sender<bool>,
-    stop_workspace_listener: broadcast::Sender<bool>,
-    stop_file_listener: broadcast::Sender<bool>,
 }
 
 impl Listeners {
@@ -63,18 +59,7 @@ impl Listeners {
             workspace_listener: Arc::new(Mutex::new(None)),
             time_listener: Arc::new(Mutex::new(Vec::new())),
             volume_listener: Arc::new(Mutex::new(None)),
-            stop_volume_listener: broadcast::channel(1).0,
-            stop_time_listener: broadcast::channel(1).0,
-            stop_workspace_listener: broadcast::channel(1).0,
-            stop_file_listener: broadcast::channel(1).0,
         }
-    }
-
-    pub fn stop_all(&mut self) {
-        _ = self.stop_volume_listener.send(true);
-        _ = self.stop_time_listener.send(true);
-        //_ = self.stop_workspace_listener.send(true);
-        _ = self.stop_file_listener.send(true);
     }
 
     pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {
@@ -129,7 +114,6 @@ impl Listeners {
 
         // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
         // to the listeners whose interval has passed and resets the interval in a loop
-        let mut stop_time_listener = self.stop_time_listener.subscribe();
         thread::spawn(move || {
             if let Ok(mut time_listener) = time_listener.lock() {
                 if time_listener.is_empty() {
@@ -148,17 +132,10 @@ impl Listeners {
                             data.interval -= min_interval;
                         }
                     });
-                    if stop_time_listener.try_recv().is_ok() {
-                        break;
-                    }
                 }
-            }
-            if let Ok(mut time_listener) = time_listener.lock() {
-                time_listener.clear();
             }
         });
 
-        let mut stop_file_listener = self.stop_file_listener.subscribe();
         thread::spawn(move || {
             if let Ok(mut file_listener) = file_listener.lock() {
                 if file_listener.is_none() {
@@ -181,14 +158,7 @@ impl Listeners {
                             });
                         }
                     }
-
-                    if stop_file_listener.try_recv().is_ok() {
-                        break;
-                    }
                 }
-            }
-            if let Ok(mut file_listener) = file_listener.lock() {
-                *file_listener = None;
             }
         });
 
