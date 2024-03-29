@@ -3,7 +3,7 @@ mod modules;
 mod util;
 
 use cairo::{Context, ImageSurface};
-use config::{get_config, Module};
+use config::get_config;
 use image::{imageops, ColorType, DynamicImage, GenericImageView, RgbImage};
 use log::{info, warn, LevelFilter};
 use modules::{
@@ -120,7 +120,66 @@ impl StatusBar {
         };
 
         let mut listeners = Listeners::new();
-        let information = update_modules(&config.modules, &mut listeners);
+        let information = config
+            .modules
+            .iter()
+            .filter_map(|module| {
+                let (receiver, format) = match &module.command {
+                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+                    Cmd::Memory(_, interval, format) => {
+                        (listeners.new_time_listener(*interval), format.as_str())
+                    }
+                    Cmd::Cpu(interval, format) => {
+                        (listeners.new_time_listener(*interval), format.as_str())
+                    }
+                    Cmd::Battery(interval, format, _) => {
+                        if battery_details().is_err() {
+                            warn!("Battery not found, deactivating module");
+                            return None;
+                        }
+                        (listeners.new_time_listener(*interval), format.as_str())
+                    }
+                    Cmd::Backlight(format, _) => match get_backlight_path() {
+                        Ok(path) => (
+                            listeners.new_file_listener(&path.join("brightness")),
+                            format.as_str(),
+                        ),
+                        Err(_) => {
+                            warn!("Backlight not found, deactivating module");
+                            return None;
+                        }
+                    },
+                    Cmd::Audio(format, _) => {
+                        (listeners.new_volume_change_listener(), format.as_str())
+                    }
+                    Cmd::Custom(_, trigger, format) => match trigger {
+                        Trigger::WorkspaceChanged => {
+                            (listeners.new_workspace_listener(), format.as_str())
+                        }
+                        Trigger::TimePassed(interval) => {
+                            (listeners.new_time_listener(*interval), format.as_str())
+                        }
+                        Trigger::FileChange(path) => {
+                            (listeners.new_file_listener(path), format.as_str())
+                        }
+                        Trigger::VolumeChanged => {
+                            (listeners.new_volume_change_listener(), format.as_str())
+                        }
+                    },
+                };
+
+                Some(ModuleData {
+                    output: String::new(),
+                    // TODO: Get rid of this clone
+                    command: module.command.clone(),
+                    x: module.x,
+                    y: module.y,
+                    format: format.to_string(),
+                    receiver,
+                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
+                })
+            })
+            .collect();
 
         let path = dirs::config_dir()
             .unwrap()
@@ -621,64 +680,4 @@ pub fn update_styles(
         })
         .reduce_with(|a, b| if b { b } else { a })
         .unwrap_or(false)
-}
-
-fn update_modules(modules: &[Module], listeners: &mut Listeners) -> Vec<ModuleData> {
-    modules
-        .iter()
-        .filter_map(|module| {
-            let (receiver, format) = match &module.command {
-                Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                Cmd::Memory(_, interval, format) => {
-                    (listeners.new_time_listener(*interval), format.as_str())
-                }
-                Cmd::Cpu(interval, format) => {
-                    (listeners.new_time_listener(*interval), format.as_str())
-                }
-                Cmd::Battery(interval, format, _) => {
-                    if battery_details().is_err() {
-                        warn!("Battery not found, deactivating module");
-                        return None;
-                    }
-                    (listeners.new_time_listener(*interval), format.as_str())
-                }
-                Cmd::Backlight(format, _) => match get_backlight_path() {
-                    Ok(path) => (
-                        listeners.new_file_listener(&path.join("brightness")),
-                        format.as_str(),
-                    ),
-                    Err(_) => {
-                        warn!("Backlight not found, deactivating module");
-                        return None;
-                    }
-                },
-                Cmd::Audio(format, _) => (listeners.new_volume_change_listener(), format.as_str()),
-                Cmd::Custom(_, trigger, format) => match trigger {
-                    Trigger::WorkspaceChanged => {
-                        (listeners.new_workspace_listener(), format.as_str())
-                    }
-                    Trigger::TimePassed(interval) => {
-                        (listeners.new_time_listener(*interval), format.as_str())
-                    }
-                    Trigger::FileChange(path) => {
-                        (listeners.new_file_listener(path), format.as_str())
-                    }
-                    Trigger::VolumeChanged => {
-                        (listeners.new_volume_change_listener(), format.as_str())
-                    }
-                },
-            };
-
-            Some(ModuleData {
-                output: String::new(),
-                // TODO: Get rid of this clone
-                command: module.command.clone(),
-                x: module.x,
-                y: module.y,
-                format: format.to_string(),
-                receiver,
-                cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
-            })
-        })
-        .collect()
 }

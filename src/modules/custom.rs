@@ -1,8 +1,8 @@
 use log::warn;
 
 use super::{
-    backlight::backlight_details, battery::battery_details, cpu::usage, memory::memory_usage,
-    workspaces::workspaces,
+    audio::audio, backlight::backlight_details, battery::battery_details, cpu::usage,
+    memory::memory_usage, workspaces::workspaces,
 };
 use crate::Cmd;
 use std::{error::Error, process::Command};
@@ -36,7 +36,7 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
         Cmd::Backlight(_, _) => backlight_details()?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_, _) => usage()?.split('.').next().ok_or("")?.into(),
         Cmd::Battery(_, _, _) => battery_details()?,
-        Cmd::Audio(_, _) => new_command("pamixer --get-volume")?,
+        Cmd::Audio(_, _) => audio()?,
     })
 }
 

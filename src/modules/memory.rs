@@ -19,8 +19,8 @@ pub fn memory_usage(opt: &MemoryOpts) -> Result<String, Box<dyn Error>> {
     let total = free + used;
 
     let output = match opt {
-        MemoryOpts::PercUsed => (free / total) * 100.0,
-        MemoryOpts::PercFree => (used / total) * 100.0,
+        MemoryOpts::PercUsed => (used / total) * 100.0,
+        MemoryOpts::PercFree => (free / total) * 100.0,
         MemoryOpts::Used => used,
         MemoryOpts::Free => free,
     }
@@ -40,5 +40,8 @@ mod tests {
     #[test]
     fn test_memory_usage() {
         assert!(memory_usage(&MemoryOpts::Used).is_ok());
+        assert!(memory_usage(&MemoryOpts::Free).is_ok());
+        assert!(memory_usage(&MemoryOpts::PercUsed).is_ok());
+        assert!(memory_usage(&MemoryOpts::PercFree).is_ok());
     }
 }

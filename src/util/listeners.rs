@@ -198,13 +198,15 @@ impl Listeners {
 
                     // Safe to unwrap because we just checked if it was none
                     _ = volume_listener.clone().unwrap().send(true);
+                    thread::sleep(std::time::Duration::from_millis(100));
                 }
             })));
             context.subscribe(InterestMaskSet::SINK, |_| {});
 
-            loop {
-                thread::sleep(std::time::Duration::from_millis(100));
-            }
+            let mainloop = Box::new(mainloop);
+            let context = Box::new(context);
+            Box::leak(context);
+            Box::leak(mainloop);
         });
     }
 

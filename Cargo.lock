@@ -777,6 +777,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulsectl-rs"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06a988bceed1981b2c5fc4a3da0e4e073fdaff8e6bd022b089f54bc573dc3cfc"
+dependencies = [
+ "libpulse-binding",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1057,6 +1066,7 @@ dependencies = [
  "inotify",
  "libpulse-binding",
  "log",
+ "pulsectl-rs",
  "rayon",
  "serde",
  "simplelog",

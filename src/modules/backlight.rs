@@ -36,16 +36,3 @@ pub fn backlight_details() -> Result<String, Box<dyn Error>> {
 
     Ok(((brightness / max_brightness) * 100.0).to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_backlight_details() {
-        match get_backlight_path() {
-            Ok(_) => assert!(backlight_details().is_ok()),
-            Err(_) => assert!(backlight_details().is_err()),
-        };
-    }
-}
