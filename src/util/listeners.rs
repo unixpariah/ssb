@@ -73,7 +73,7 @@ impl Listeners {
     pub fn stop_all(&mut self) {
         _ = self.stop_volume_listener.send(true);
         _ = self.stop_time_listener.send(true);
-        _ = self.stop_workspace_listener.send(true);
+        //_ = self.stop_workspace_listener.send(true);
         _ = self.stop_file_listener.send(true);
     }
 
@@ -137,9 +137,6 @@ impl Listeners {
                 }
 
                 loop {
-                    if stop_time_listener.try_recv().is_ok() {
-                        break;
-                    }
                     time_listener.sort_by(|a, b| a.interval.cmp(&b.interval));
                     let min_interval = time_listener[0].interval;
                     thread::sleep(std::time::Duration::from_millis(min_interval));
@@ -151,7 +148,13 @@ impl Listeners {
                             data.interval -= min_interval;
                         }
                     });
+                    if stop_time_listener.try_recv().is_ok() {
+                        break;
+                    }
                 }
+            }
+            if let Ok(mut time_listener) = time_listener.lock() {
+                time_listener.clear();
             }
         });
 
@@ -163,9 +166,6 @@ impl Listeners {
                 }
 
                 loop {
-                    if stop_file_listener.try_recv().is_ok() {
-                        break;
-                    }
                     let mut buffer = [0; 1024];
                     if let Some(file_listener) = file_listener.as_mut() {
                         if let Ok(events) = file_listener.inotify.read_events_blocking(&mut buffer)
@@ -181,7 +181,14 @@ impl Listeners {
                             });
                         }
                     }
+
+                    if stop_file_listener.try_recv().is_ok() {
+                        break;
+                    }
                 }
+            }
+            if let Ok(mut file_listener) = file_listener.lock() {
+                *file_listener = None;
             }
         });
 
@@ -201,7 +208,6 @@ impl Listeners {
             }
         });
 
-        let mut stop_volume_listener = self.stop_volume_listener.subscribe();
         thread::spawn(move || {
             let mut mainloop = Mainloop::new().unwrap();
             let mut context = Context::new(&mainloop, "volume-change-listener").unwrap();
@@ -227,9 +233,6 @@ impl Listeners {
             context.subscribe(InterestMaskSet::SINK, |_| {});
 
             loop {
-                if stop_volume_listener.try_recv().is_ok() {
-                    break;
-                }
                 thread::sleep(std::time::Duration::from_millis(100));
             }
         });

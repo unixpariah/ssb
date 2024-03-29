@@ -23,7 +23,10 @@ jobs:
           key: cargo-stable
 
       - name: Install system dependencies
-        run: sudo apt-get install pkg-config libcairo2-dev libpulse-dev
+        run: |
+          sudo apt update
+          sudo apt upgrade
+          sudo apt-get install pkg-config libcairo2-dev libpulse-dev
 
       - name: Run tests
         env:
