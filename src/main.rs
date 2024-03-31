@@ -66,7 +66,6 @@ pub struct ModuleData {
     format: String,
     receiver: broadcast::Receiver<bool>,
     cache: DynamicImage,
-    css: String,
 }
 
 struct StatusBar {
@@ -81,6 +80,7 @@ struct StatusBar {
     cache: HashMap<i32, RgbImage>,
     dispatch: bool,
     hot_config: HotConfig,
+    css: String,
 }
 
 struct HotConfig {
@@ -109,76 +109,40 @@ impl StatusBar {
             }
         };
 
-        let css = config
-            .1
-            .par_split('}')
-            .map(|s| s.trim())
-            .collect::<Vec<_>>();
-
         let mut listeners = Listeners::new();
         let information = config
             .0
             .modules
             .iter()
             .filter_map(|module| {
-                let (receiver, format, css) = match &module.command {
-                    Cmd::Workspaces(_) => (
-                        listeners.new_workspace_listener(),
-                        "%s",
-                        css.iter()
-                            .find(|s| s.contains("workspaces"))
-                            .unwrap()
-                            .to_string(),
-                    ),
-                    Cmd::Memory(_, interval, format) => (
-                        listeners.new_time_listener(*interval),
-                        format.as_str(),
-                        css.iter()
-                            .find(|s| s.contains("memory"))
-                            .unwrap()
-                            .to_string(),
-                    ),
-                    Cmd::Cpu(interval, format) => (
-                        listeners.new_time_listener(*interval),
-                        format.as_str(),
-                        css.iter().find(|s| s.contains("cpu")).unwrap().to_string(),
-                    ),
+                let (receiver, format) = match &module.command {
+                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+                    Cmd::Memory(_, interval, format) => {
+                        (listeners.new_time_listener(*interval), format.as_str())
+                    }
+                    Cmd::Cpu(interval, format) => {
+                        (listeners.new_time_listener(*interval), format.as_str())
+                    }
                     Cmd::Battery(interval, format, _) => {
                         if battery_details().is_err() {
                             warn!("Battery not found, deactivating module");
                             return None;
                         }
-                        (
-                            listeners.new_time_listener(*interval),
-                            format.as_str(),
-                            css.iter()
-                                .find(|s| s.contains("battery"))
-                                .unwrap()
-                                .to_string(),
-                        )
+                        (listeners.new_time_listener(*interval), format.as_str())
                     }
                     Cmd::Backlight(format, _) => match get_backlight_path() {
                         Ok(path) => (
                             listeners.new_file_listener(&path.join("brightness")),
                             format.as_str(),
-                            css.iter()
-                                .find(|s| s.contains("backlight"))
-                                .unwrap()
-                                .to_string(),
                         ),
                         Err(_) => {
                             warn!("Backlight not found, deactivating module");
                             return None;
                         }
                     },
-                    Cmd::Audio(format, _) => (
-                        listeners.new_volume_change_listener(),
-                        format.as_str(),
-                        css.iter()
-                            .find(|s| s.contains("audio"))
-                            .unwrap()
-                            .to_string(),
-                    ),
+                    Cmd::Audio(format, _) => {
+                        (listeners.new_volume_change_listener(), format.as_str())
+                    }
                     Cmd::Custom(_, trigger, format) => {
                         let trigger = match trigger {
                             Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
@@ -186,19 +150,11 @@ impl StatusBar {
                             Trigger::FileChange(path) => listeners.new_file_listener(path),
                             Trigger::VolumeChanged => listeners.new_volume_change_listener(),
                         };
-                        (
-                            trigger,
-                            format.as_str(),
-                            css.iter()
-                                .find(|s| s.contains("custom"))
-                                .unwrap()
-                                .to_string(),
-                        )
+                        (trigger, format.as_str())
                     }
                 };
 
                 Some(ModuleData {
-                    css,
                     output: String::new(),
                     command: module.command.to_owned(),
                     x: module.x,
@@ -233,6 +189,7 @@ impl StatusBar {
             cache: HashMap::new(),
             dispatch: true,
             hot_config,
+            css: config.1,
         }
     }
 
@@ -299,9 +256,6 @@ impl StatusBar {
                             _ => format,
                         };
 
-                        let mut css = info.css.clone();
-                        css.push_str(&format!(" content: \"{}\"; }}", format));
-
                         let name = match info.command {
                             Cmd::Workspaces(_) => "workspaces",
                             Cmd::Memory(_, _, _) => "memory",
@@ -311,6 +265,14 @@ impl StatusBar {
                             Cmd::Audio(_, _) => "audio",
                             Cmd::Custom(_, _, _) => "custom",
                         };
+
+                        let mut css = self.css.clone();
+                        if let Some(index) = css.find(name) {
+                            let closest_brace_index = css[index..].find('}').map(|i| i + index);
+                            css = css[index..closest_brace_index.unwrap()].to_string();
+                            css.push_str(&format!(" content: \"{}\"; }}", format));
+                        };
+
                         let img = css_image::parse(css.to_string()).unwrap();
                         let img = img.get(name);
                         if let Ok(img) = image::load_from_memory(img.unwrap()) {
