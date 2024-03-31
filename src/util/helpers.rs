@@ -1,66 +1,10 @@
-use crate::config::Font;
-use cairo::{Context, ImageSurface, TextExtents};
-
-pub fn set_info_context(context: &Context, extents: TextExtents, config: &crate::config::Config) {
-    let background = config.background;
-    let font = &config.font;
-
-    context.set_source_rgb(
-        background[0] as f64 / 255.0,
-        background[1] as f64 / 255.0,
-        background[2] as f64 / 255.0,
-    );
-    _ = context.paint();
-
-    context.move_to(extents.x_bearing().abs(), extents.y_bearing().abs());
-    context.set_source_rgb(
-        font.color[0] as f64 / 255.,
-        font.color[1] as f64 / 255.,
-        font.color[2] as f64 / 255.,
-    );
-    context.select_font_face(
-        &font.family,
-        cairo::FontSlant::Normal,
-        if font.bold {
-            cairo::FontWeight::Bold
-        } else {
-            cairo::FontWeight::Normal
-        },
-    );
-    context.set_font_size(font.size);
-}
-
-pub fn get_context(font: &Font) -> Context {
-    let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0).unwrap();
-    let context = cairo::Context::new(&surface).unwrap();
-
-    context.select_font_face(
-        &font.family,
-        cairo::FontSlant::Normal,
-        if font.bold {
-            cairo::FontWeight::Bold
-        } else {
-            cairo::FontWeight::Normal
-        },
-    );
-    context.set_font_size(font.size);
-    context
-}
-
-pub const TOML: &str = r#"# Basic configurations
-
+pub const TOML: &str = r#"
 unkown = "N/A" # Default value for unknown commands
 background = [20, 15, 33] # Background color as RGB value
 topbar = true # true for bar at top of the screen, false for bar at bottom of the screen
 height = 40 # Height of the bar
 
 # Font settings
-
-[font]
-family = "JetBrainsMono Nerd Font"
-size = 16.0
-bold = true
-color = [255, 255, 255]
 
 # Modules
 
@@ -161,4 +105,48 @@ command.Custom = ["date +%H:%M", { TimePassed = 60000 }, " %s"]
 x = 1775.0
 y = 20.0
 command.Custom = ["iwgetid -r", { TimePassed = 10000 }, "  %s"]
+"#;
+
+pub const CSS: &str = r#"
+backlight {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
+
+battery {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
+
+audio {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
+
+cpu {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
+
+memory {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
+
+workspaces {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
+
+custom {
+    font-weight: bold;
+    color: #ffffff;
+    content: "a";
+}
 "#;

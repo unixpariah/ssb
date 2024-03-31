@@ -1,9 +1,12 @@
-use crate::{util::helpers::TOML, Cmd};
+use crate::{
+    util::helpers::{CSS, TOML},
+    Cmd,
+};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
+pub fn get_config() -> Result<(Config, String), Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
         Some(dir) => dir,
         None => {
@@ -12,6 +15,7 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
         }
     };
     let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
+    let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
 
     if !config_path.exists() {
         info!(
@@ -22,9 +26,19 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
         _ = fs::write(&config_path, TOML);
     }
 
-    let file = fs::read_to_string(&config_path)?;
+    if !css_path.exists() {
+        info!(
+            "CSS file not found, generating new one at: {}",
+            css_path.display()
+        );
+        fs::create_dir_all(css_path.parent().ok_or("")?)?;
+        _ = fs::write(&css_path, CSS);
+    }
 
-    Ok(toml::from_str::<Config>(file.trim())?)
+    let config = toml::from_str::<Config>(&fs::read_to_string(&config_path)?.trim())?;
+    let css = fs::read_to_string(&css_path)?;
+
+    Ok((config, css))
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

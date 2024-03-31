@@ -4,7 +4,7 @@ mod util;
 
 use cairo::{Context, ImageSurface};
 use config::get_config;
-use image::{imageops, ColorType, DynamicImage, GenericImageView, RgbImage};
+use image::{imageops, ColorType, DynamicImage, RgbImage};
 use log::{info, warn, LevelFilter};
 use modules::{
     backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
@@ -28,7 +28,7 @@ use smithay_client_toolkit::{
 use std::{collections::HashMap, error::Error, sync::mpsc};
 use tokio::sync::broadcast;
 use util::{
-    helpers::{get_context, set_info_context, TOML},
+    helpers::TOML,
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -58,17 +58,6 @@ struct Surface {
     background: DynamicImage,
 }
 
-struct ImgCache {
-    img: DynamicImage,
-    unchanged: bool,
-}
-
-impl ImgCache {
-    fn new(img: DynamicImage, unchanged: bool) -> Self {
-        Self { img, unchanged }
-    }
-}
-
 pub struct ModuleData {
     output: String,
     command: Cmd,
@@ -76,7 +65,8 @@ pub struct ModuleData {
     y: f64,
     format: String,
     receiver: broadcast::Receiver<bool>,
-    cache: ImgCache,
+    cache: DynamicImage,
+    css: String,
 }
 
 struct StatusBar {
@@ -119,73 +109,114 @@ impl StatusBar {
             }
         };
 
+        let css = config
+            .1
+            .par_split('}')
+            .map(|s| s.trim())
+            .collect::<Vec<_>>();
+
         let mut listeners = Listeners::new();
         let information = config
+            .0
             .modules
             .iter()
             .filter_map(|module| {
-                let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                    Cmd::Memory(_, interval, format) => {
-                        (listeners.new_time_listener(*interval), format.as_str())
-                    }
-                    Cmd::Cpu(interval, format) => {
-                        (listeners.new_time_listener(*interval), format.as_str())
-                    }
+                let (receiver, format, css) = match &module.command {
+                    Cmd::Workspaces(_) => (
+                        listeners.new_workspace_listener(),
+                        "%s",
+                        css.iter()
+                            .find(|s| s.contains("workspaces"))
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    Cmd::Memory(_, interval, format) => (
+                        listeners.new_time_listener(*interval),
+                        format.as_str(),
+                        css.iter()
+                            .find(|s| s.contains("memory"))
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    Cmd::Cpu(interval, format) => (
+                        listeners.new_time_listener(*interval),
+                        format.as_str(),
+                        css.iter().find(|s| s.contains("cpu")).unwrap().to_string(),
+                    ),
                     Cmd::Battery(interval, format, _) => {
                         if battery_details().is_err() {
                             warn!("Battery not found, deactivating module");
                             return None;
                         }
-                        (listeners.new_time_listener(*interval), format.as_str())
+                        (
+                            listeners.new_time_listener(*interval),
+                            format.as_str(),
+                            css.iter()
+                                .find(|s| s.contains("battery"))
+                                .unwrap()
+                                .to_string(),
+                        )
                     }
                     Cmd::Backlight(format, _) => match get_backlight_path() {
                         Ok(path) => (
                             listeners.new_file_listener(&path.join("brightness")),
                             format.as_str(),
+                            css.iter()
+                                .find(|s| s.contains("backlight"))
+                                .unwrap()
+                                .to_string(),
                         ),
                         Err(_) => {
                             warn!("Backlight not found, deactivating module");
                             return None;
                         }
                     },
-                    Cmd::Audio(format, _) => {
-                        (listeners.new_volume_change_listener(), format.as_str())
+                    Cmd::Audio(format, _) => (
+                        listeners.new_volume_change_listener(),
+                        format.as_str(),
+                        css.iter()
+                            .find(|s| s.contains("audio"))
+                            .unwrap()
+                            .to_string(),
+                    ),
+                    Cmd::Custom(_, trigger, format) => {
+                        let trigger = match trigger {
+                            Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
+                            Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
+                            Trigger::FileChange(path) => listeners.new_file_listener(path),
+                            Trigger::VolumeChanged => listeners.new_volume_change_listener(),
+                        };
+                        (
+                            trigger,
+                            format.as_str(),
+                            css.iter()
+                                .find(|s| s.contains("custom"))
+                                .unwrap()
+                                .to_string(),
+                        )
                     }
-                    Cmd::Custom(_, trigger, format) => match trigger {
-                        Trigger::WorkspaceChanged => {
-                            (listeners.new_workspace_listener(), format.as_str())
-                        }
-                        Trigger::TimePassed(interval) => {
-                            (listeners.new_time_listener(*interval), format.as_str())
-                        }
-                        Trigger::FileChange(path) => {
-                            (listeners.new_file_listener(path), format.as_str())
-                        }
-                        Trigger::VolumeChanged => {
-                            (listeners.new_volume_change_listener(), format.as_str())
-                        }
-                    },
                 };
 
                 Some(ModuleData {
+                    css,
                     output: String::new(),
                     command: module.command.to_owned(),
                     x: module.x,
                     y: module.y,
                     format: format.to_string(),
                     receiver,
-                    cache: ImgCache::new(DynamicImage::new(0, 0, ColorType::L8), false),
+                    cache: DynamicImage::new(0, 0, ColorType::L8),
                 })
             })
             .collect();
 
-        let path = dirs::config_dir()
-            .unwrap()
-            .join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
+        let config_dir = dirs::config_dir().unwrap();
+
+        let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
+        //let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
         let hot_config = HotConfig {
-            config,
-            listener: listeners.new_file_listener(&path),
+            config: config.0,
+            listener: listeners.new_file_listener(&config_path),
         };
 
         listeners.start_all();
@@ -212,7 +243,7 @@ impl StatusBar {
 
         let config_changed = if self.hot_config.listener.try_recv().is_ok() {
             self.hot_config.config = match get_config() {
-                Ok(config) => config,
+                Ok(config) => config.0,
                 Err(_) => {
                     warn!("Configuration file could not be parsed, using default configuration");
                     toml::from_str(TOML).expect(MESSAGE)
@@ -239,22 +270,62 @@ impl StatusBar {
         };
 
         let config = &self.hot_config.config;
-        let font = &config.font;
 
-        let surface = ImageSurface::create(cairo::Format::Rgb30, 0, 0)?;
-        let context = cairo::Context::new(&surface)?;
+        let unchanged = !self
+            .information
+            .par_iter_mut()
+            .map(|info| {
+                if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
+                    let output =
+                        get_command_output(&info.command).unwrap_or(config.unkown.to_string());
 
-        context.select_font_face(
-            &font.family,
-            cairo::FontSlant::Normal,
-            if font.bold {
-                cairo::FontWeight::Bold
-            } else {
-                cairo::FontWeight::Normal
-            },
-        );
-        context.set_font_size(font.size);
-        let unchanged = update_styles(&mut self.information, config_changed, config);
+                    if output != info.output || config_changed {
+                        let format = info.format.replace("%s", &output);
+                        let format = match &info.command {
+                            Cmd::Battery(_, _, icons)
+                            | Cmd::Backlight(_, icons)
+                            | Cmd::Audio(_, icons)
+                                if !icons.is_empty() =>
+                            {
+                                if let Ok(output) = output.parse::<usize>() {
+                                    let range_size = 100 / icons.len();
+                                    let icon =
+                                        &icons[std::cmp::min(output / range_size, icons.len() - 1)];
+                                    format.replace("%c", icon)
+                                } else {
+                                    format.replace("%c", "")
+                                }
+                            }
+                            _ => format,
+                        };
+
+                        let mut css = info.css.clone();
+                        css.push_str(&format!(" content: \"{}\"; }}", format));
+
+                        let name = match info.command {
+                            Cmd::Workspaces(_) => "workspaces",
+                            Cmd::Memory(_, _, _) => "memory",
+                            Cmd::Cpu(_, _) => "cpu",
+                            Cmd::Battery(_, _, _) => "battery",
+                            Cmd::Backlight(_, _) => "backlight",
+                            Cmd::Audio(_, _) => "audio",
+                            Cmd::Custom(_, _, _) => "custom",
+                        };
+                        let img = css_image::parse(css.to_string()).unwrap();
+                        let img = img.get(name);
+                        if let Ok(img) = image::load_from_memory(img.unwrap()) {
+                            info.cache = img;
+                        }
+
+                        info.output = output;
+                        return true;
+                    }
+                };
+                false
+            })
+            .reduce_with(|a, b| if b { b } else { a })
+            .unwrap_or(false);
+
         if unchanged && !config_changed {
             self.dispatch = false;
             return Ok(());
@@ -292,18 +363,14 @@ impl StatusBar {
             }
 
             if self.cache.get(&width).is_none() {
-                let background = &mut surface.background;
+                let mut background = surface.background.clone();
                 self.information.iter().for_each(|info| {
-                    if info.cache.unchanged {
-                        return;
-                    }
-
                     let img_cache = &info.cache;
                     imageops::overlay(
-                        background,
-                        &img_cache.img,
+                        &mut background,
+                        img_cache,
                         info.x as i64,
-                        info.y as i64 - img_cache.img.height() as i64 / 2,
+                        info.y as i64 - img_cache.height() as i64 / 2,
                     );
                 });
 
@@ -504,6 +571,7 @@ fn setup_listeners(
 
 #[tokio::main]
 async fn main() {
+    let a = std::time::Instant::now();
     logger();
 
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
@@ -554,6 +622,7 @@ async fn main() {
             continue;
         }
 
+        println!("Time taken: {:?}", a.elapsed());
         status_bar
             .draw
             .recv()
@@ -587,96 +656,4 @@ fn logger() {
         ColorChoice::AlwaysAnsi,
     )
     .expect("Failed to initialize logger");
-}
-
-pub fn update_styles(
-    information: &mut Vec<ModuleData>,
-    config_changed: bool,
-    config: &config::Config,
-) -> bool {
-    !information
-        .par_iter_mut()
-        .map(|info| {
-            if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
-                let output = get_command_output(&info.command).unwrap_or(config.unkown.to_string());
-
-                if output != info.output || config_changed {
-                    let format = info.format.replace("%s", &output);
-                    let format = match &info.command {
-                        Cmd::Battery(_, _, icons)
-                        | Cmd::Backlight(_, icons)
-                        | Cmd::Audio(_, icons)
-                            if !icons.is_empty() =>
-                        {
-                            if let Ok(output) = output.parse::<usize>() {
-                                let range_size = 100 / icons.len();
-                                let icon =
-                                    &icons[std::cmp::min(output / range_size, icons.len() - 1)];
-                                format.replace("%c", icon)
-                            } else {
-                                format.replace("%c", "")
-                            }
-                        }
-                        _ => format,
-                    };
-                    let context = get_context(&config.font);
-                    let extents = match context.text_extents(&format) {
-                        Ok(extents) => extents,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-
-                    let (width, height) = info.cache.img.dimensions();
-                    let width = if (extents.width() + extents.x_bearing().abs()) as u32 > width
-                        || config_changed
-                    {
-                        extents.width() as u32
-                    } else {
-                        width
-                    };
-
-                    let height = if extents.height() as u32 > height || config_changed {
-                        extents.height() as u32
-                    } else {
-                        height
-                    };
-
-                    let surface = match ImageSurface::create(
-                        cairo::Format::Rgb30,
-                        width as i32,
-                        height as i32,
-                    ) {
-                        Ok(surface) => surface,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    let context = match cairo::Context::new(&surface) {
-                        Ok(context) => context,
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    set_info_context(&context, extents, config);
-
-                    _ = context.show_text(&format);
-
-                    let mut img = Vec::new();
-                    _ = surface.write_to_png(&mut img);
-
-                    if let Ok(img) = image::load_from_memory(&img) {
-                        info.cache = ImgCache::new(img, false);
-                    }
-
-                    info.output = output;
-                    return true;
-                }
-            };
-
-            info.cache.unchanged = true;
-            false
-        })
-        .reduce_with(|a, b| if b { b } else { a })
-        .unwrap_or(false)
 }
