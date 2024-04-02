@@ -29,19 +29,19 @@ pub enum WorkspaceListener {
 }
 
 pub struct WorkspaceListenerData {
-    tx: broadcast::Sender<bool>,
+    tx: broadcast::Sender<()>,
     listener: WorkspaceListener,
 }
 
 #[derive(Debug)]
 pub struct TimeListenerData {
-    tx: broadcast::Sender<bool>,
+    tx: broadcast::Sender<()>,
     interval: u64,
     original_interval: u64,
 }
 
 pub struct FileListenerData {
-    store: HashMap<String, broadcast::Sender<bool>>,
+    store: HashMap<String, broadcast::Sender<()>>,
     inotify: Inotify,
 }
 
@@ -49,7 +49,7 @@ pub struct Listeners {
     workspace_listener: Arc<Mutex<Option<WorkspaceListenerData>>>,
     file_listener: Arc<Mutex<Option<FileListenerData>>>,
     time_listener: Arc<Mutex<Vec<TimeListenerData>>>,
-    volume_listener: Arc<Mutex<Option<broadcast::Sender<bool>>>>,
+    volume_listener: Arc<Mutex<Option<broadcast::Sender<()>>>>,
 }
 
 impl Listeners {
@@ -62,7 +62,7 @@ impl Listeners {
         }
     }
 
-    pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<bool> {
+    pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<()> {
         if let Ok(workspace_listener) = self.workspace_listener.lock() {
             if let Some(workspace_listener) = workspace_listener.as_ref() {
                 return workspace_listener.tx.subscribe();
@@ -78,21 +78,21 @@ impl Listeners {
             {
                 let tx = tx.clone();
                 listener.add_workspace_destroy_handler(move |_| {
-                    _ = tx.send(true);
+                    _ = tx.send(());
                 });
             }
 
             {
                 let tx = tx.clone();
                 listener.add_workspace_change_handler(move |_| {
-                    _ = tx.send(true);
+                    _ = tx.send(());
                 });
             }
 
             {
                 let tx = tx.clone();
                 listener.add_active_monitor_change_handler(move |_| {
-                    _ = tx.send(true);
+                    _ = tx.send(());
                 });
             }
 
@@ -126,7 +126,7 @@ impl Listeners {
                     thread::sleep(std::time::Duration::from_millis(min_interval));
                     time_listener.iter_mut().for_each(|data| {
                         if data.interval <= min_interval {
-                            _ = data.tx.send(true);
+                            _ = data.tx.send(());
                             data.interval = data.original_interval;
                         } else {
                             data.interval -= min_interval;
@@ -153,7 +153,7 @@ impl Listeners {
                                     // We're always listening to parent changes so unwrap is safe (I hope)
                                     .get(&event.name.unwrap().to_string_lossy().to_string())
                                 {
-                                    _ = tx.send(true);
+                                    _ = tx.send(());
                                 }
                             });
                         }
@@ -197,7 +197,7 @@ impl Listeners {
                     }
 
                     // Safe to unwrap because we just checked if it was none
-                    _ = volume_listener.clone().unwrap().send(true);
+                    _ = volume_listener.clone().unwrap().send(());
                     thread::sleep(std::time::Duration::from_millis(100));
                 }
             })));
@@ -210,7 +210,7 @@ impl Listeners {
         });
     }
 
-    pub fn new_time_listener(&mut self, interval: u64) -> broadcast::Receiver<bool> {
+    pub fn new_time_listener(&mut self, interval: u64) -> broadcast::Receiver<()> {
         let (tx, rx) = broadcast::channel(1);
 
         let data = TimeListenerData {
@@ -227,7 +227,7 @@ impl Listeners {
         rx
     }
 
-    pub fn new_file_listener(&mut self, path: &Path) -> broadcast::Receiver<bool> {
+    pub fn new_file_listener(&mut self, path: &Path) -> broadcast::Receiver<()> {
         let (tx, rx) = broadcast::channel(1);
 
         if let Ok(mut file_listener) = self.file_listener.lock() {
@@ -265,7 +265,7 @@ impl Listeners {
         rx
     }
 
-    pub fn new_volume_change_listener(&mut self) -> broadcast::Receiver<bool> {
+    pub fn new_volume_change_listener(&mut self) -> broadcast::Receiver<()> {
         if let Ok(volume_change_listener) = self.volume_listener.lock() {
             if let Some(volume_change_listener) = volume_change_listener.as_ref() {
                 return volume_change_listener.subscribe();
@@ -296,7 +296,6 @@ mod tests {
         listeners.start_all();
         let result = listener.recv().await;
         assert!(result.is_ok());
-        assert!(result.unwrap());
     }
 
     #[tokio::test]

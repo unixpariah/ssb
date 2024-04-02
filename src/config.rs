@@ -1,15 +1,10 @@
 use crate::{
     util::helpers::{CSS, TOML},
-    Cmd, MESSAGE,
+    Cmd,
 };
-use lazy_static::lazy_static;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
-
-lazy_static! {
-    pub static ref CONFIG: Config = get_config().unwrap_or(toml::from_str(TOML).expect(MESSAGE));
-}
 
 pub fn get_css() -> Result<String, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {

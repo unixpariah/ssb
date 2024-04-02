@@ -79,12 +79,12 @@ cargo build --release
 
 ## Configuration
 
-The configuration file will be generated at XDG_HOME_CONFIG/ssb/config.toml on first run.
+The configuration files will be generated at XDG_HOME_CONFIG/ssb/* on first run.
+
+Styling with css is handled by [css-image](https://github.com/unixpariah/css-image) and is currently very limited.
 
 ## TODO
-- [ ] Add sway support (and other compositors as well)
-- [ ] Add better styling
-- [ ] Optimize modules
-- [ ] Add Tray
-- [ ] Hot configuration modules
-- [ ] Fix crashing when new output is added
+- Add sway support (and other compositors as well)
+- Add Tray
+- Hot configuration modules
+- Fix crashing when new output is added

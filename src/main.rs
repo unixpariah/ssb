@@ -3,7 +3,7 @@ mod modules;
 mod util;
 
 use cairo::{Context, ImageSurface};
-use config::{get_css, CONFIG};
+use config::{get_config, get_css, Config};
 use image::{imageops, ColorType, DynamicImage, RgbaImage};
 use log::{info, warn, LevelFilter};
 use modules::{
@@ -66,7 +66,7 @@ pub struct ModuleData {
     x: f64,
     y: f64,
     format: String,
-    receiver: broadcast::Receiver<bool>,
+    receiver: broadcast::Receiver<()>,
     cache: DynamicImage,
 }
 
@@ -78,15 +78,17 @@ struct StatusBar {
     layer_shell: LayerShell,
     compositor_state: CompositorState,
     information: Vec<ModuleData>,
-    draw: mpsc::Receiver<bool>,
+    draw: mpsc::Receiver<()>,
     cache: HashMap<i32, RgbaImage>,
     dispatch: bool,
-    css: Css,
+    config: HotConfig,
 }
 
-struct Css {
-    config: String,
-    listener: broadcast::Receiver<bool>,
+struct HotConfig {
+    css: String,
+    css_listener: broadcast::Receiver<()>,
+    config: Config,
+    config_listener: broadcast::Receiver<()>,
 }
 
 static MESSAGE: &str = "If you see this, please contact lazy ass developer behind this project who did not care to update default config";
@@ -95,7 +97,7 @@ impl StatusBar {
     fn new(
         globals: &GlobalList,
         qh: &wayland_client::QueueHandle<Self>,
-        rx: mpsc::Receiver<bool>,
+        rx: mpsc::Receiver<()>,
     ) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
@@ -105,13 +107,21 @@ impl StatusBar {
         let css = match get_css() {
             Ok(config) => config,
             Err(_) => {
-                warn!("Configuration file could not be parsed, using default configuration");
+                warn!("CSS could not be parsed, using default styles");
+                toml::from_str(CSS).expect(MESSAGE)
+            }
+        };
+
+        let config = match get_config() {
+            Ok(config) => config,
+            Err(_) => {
+                warn!("Config file could not be parsed, using default configuration");
                 toml::from_str(TOML).expect(MESSAGE)
             }
         };
 
         let mut listeners = Listeners::new();
-        let information = CONFIG
+        let information = config
             .modules
             .iter()
             .filter_map(|module| {
@@ -168,9 +178,13 @@ impl StatusBar {
 
         let config_dir = dirs::config_dir().unwrap();
         let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
-        let css = Css {
-            config: css,
-            listener: listeners.new_file_listener(&css_path),
+        let config_path = config_dir.join("config.toml");
+
+        let config = HotConfig {
+            css,
+            css_listener: listeners.new_file_listener(&css_path),
+            config,
+            config_listener: listeners.new_file_listener(&config_path),
         };
 
         listeners.start_all();
@@ -186,7 +200,7 @@ impl StatusBar {
             draw: rx,
             cache: HashMap::new(),
             dispatch: true,
-            css,
+            config,
         }
     }
 
@@ -195,28 +209,36 @@ impl StatusBar {
             return Ok(());
         }
 
-        let config_changed = if self.css.listener.try_recv().is_ok() {
-            self.css.config = match get_css() {
+        let mut config_changed = false;
+        if self.config.css_listener.try_recv().is_ok() {
+            self.config.css = match get_css() {
                 Ok(css) => css,
                 Err(_) => {
-                    warn!("Configuration file could not be parsed, using default configuration");
+                    warn!("CSS could not be parsed, using default styles");
+                    toml::from_str(CSS).expect(MESSAGE)
+                }
+            };
+            config_changed = true;
+        }
+        if self.config.config_listener.try_recv().is_ok() {
+            self.config.config = match get_config() {
+                Ok(config) => config,
+                Err(_) => {
+                    warn!("Config file could not be parsed, using default configuration");
                     toml::from_str(TOML).expect(MESSAGE)
                 }
             };
             self.surfaces.iter_mut().for_each(|surface| {
-                surface.layer_surface.set_anchor(match CONFIG.topbar {
+                surface.layer_surface.set_anchor(match self.config.config.topbar {
                     true => Anchor::TOP,
                     false => Anchor::BOTTOM,
                 });
                 surface
                     .layer_surface
-                    .set_size(surface.width as u32, CONFIG.height as u32);
-                surface.layer_surface.set_exclusive_zone(CONFIG.height);
+                    .set_size(surface.width as u32, self.config.config.height as u32);
+                surface.layer_surface.set_exclusive_zone(self.config.config.height);
             });
-
-            true
-        } else {
-            false
+            config_changed = true;
         };
 
         let unchanged = !self
@@ -225,7 +247,7 @@ impl StatusBar {
             .map(|info| {
                 if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
                     let output =
-                        get_command_output(&info.command).unwrap_or(CONFIG.unkown.to_string());
+                        get_command_output(&info.command).unwrap_or(self.config.config.unkown.to_string());
 
                     if output != info.output || config_changed {
                         let format = info.format.replace("%s", &output);
@@ -257,11 +279,11 @@ impl StatusBar {
                             Cmd::Custom(_, _, _) => "custom",
                         };
 
-                        let css = &self.css.config;
+                        let css = &self.config.css;
                         let css = css.find(name).map_or_else(|| {
                             warn!("Style declaration for module {name} not found, using default style");
                             let index = CSS.find(name).expect(MESSAGE);
-                            let end_index = CSS[index..].find('}').map(|i| i + index).unwrap();
+                            let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
                             let mut css_section = CSS[index..end_index].to_string();
                             css_section.push_str(&format!(" content: \"{}\"; }}", format)); 
                             css_section 
@@ -274,10 +296,15 @@ impl StatusBar {
                             },
                         );
 
-                        // If this panics then either the crate is broken or I forgot to update the default css
-                        let img = css_image::parse(css.to_string()).unwrap();
-                        let img = img.get(name);
-                        if let Ok(img) = image::load_from_memory(img.unwrap()) {
+                        let img = css_image::parse(css.to_string()).unwrap_or_else(|_|  {
+                                warn!("Failed to parse {name} module css, using default style");
+                                let index = CSS.find(name).expect(MESSAGE);
+                                let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                                let mut css = CSS[index..end_index].to_string();
+                                css.push_str(&format!(" content: \"{}\"; }}", format));
+                                css_image::parse(css).expect(MESSAGE)
+                        });
+                        if let Ok(img) = image::load_from_memory(img.get(name).unwrap()) {
                             info.cache = img;
                         }
 
@@ -298,15 +325,15 @@ impl StatusBar {
         self.cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
-            let height = CONFIG.height;
+            let height = self.config.config.height;
 
-            if config_changed {
+            if config_changed{
                 let img_surface =
                     ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
 
-                let background = CONFIG.background;
-                let font = &CONFIG.font;
+                let background = self.config.config.background;
+                let font = &self.config.config.font;
 
                 context.set_source_rgba(
                     background[0] as f64 / 255.0,
@@ -385,7 +412,7 @@ impl OutputHandler for StatusBar {
         );
 
         if let Some(info) = self.output_state.info(&output) {
-            let config = &CONFIG;
+            let config = &self.config.config;
             let height = config.height;
             if let Some((width, _)) = info.logical_size {
                 layer.set_anchor(match config.topbar {
@@ -513,16 +540,16 @@ impl ShmHandler for StatusBar {
 }
 
 fn setup_listeners(
-    listeners: Vec<(broadcast::Receiver<bool>, broadcast::Sender<bool>)>,
-    sender: mpsc::Sender<bool>,
+    listeners: Vec<(broadcast::Receiver<()>, broadcast::Sender<()>)>,
+    sender: mpsc::Sender<()>,
 ) {
     listeners.into_iter().for_each(|mut listener| {
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
-                if let Ok(message) = listener.0.recv().await {
-                    _ = sender.send(message);
-                    _ = listener.1.send(true);
+                if listener.0.recv().await.is_ok() {
+                    _ = sender.send(());
+                    _ = listener.1.send(());
                 };
             }
         });
@@ -554,7 +581,9 @@ async fn main() {
 
     {
         let (tx, rx) = broadcast::channel(1);
-        receivers.push((std::mem::replace(&mut status_bar.css.listener, rx), tx))
+        receivers.push((std::mem::replace(&mut status_bar.config.css_listener, rx), tx));
+        let (tx, rx) = broadcast::channel(1);
+        receivers.push((std::mem::replace(&mut status_bar.config.config_listener, rx), tx))
     }
 
     setup_listeners(receivers, tx);
