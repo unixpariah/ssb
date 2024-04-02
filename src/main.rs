@@ -3,8 +3,8 @@ mod modules;
 mod util;
 
 use cairo::{Context, ImageSurface};
-use config::get_config;
-use image::{imageops, ColorType, DynamicImage, RgbImage};
+use config::{get_css, CONFIG};
+use image::{imageops, ColorType, DynamicImage, RgbaImage};
 use log::{info, warn, LevelFilter};
 use modules::{
     backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
@@ -77,14 +77,13 @@ struct StatusBar {
     compositor_state: CompositorState,
     information: Vec<ModuleData>,
     draw: mpsc::Receiver<bool>,
-    cache: HashMap<i32, RgbImage>,
+    cache: HashMap<i32, RgbaImage>,
     dispatch: bool,
-    hot_config: HotConfig,
-    css: String,
+    css: Css,
 }
 
-struct HotConfig {
-    config: config::Config,
+struct Css {
+    config: String,
     listener: broadcast::Receiver<bool>,
 }
 
@@ -101,7 +100,7 @@ impl StatusBar {
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
 
-        let config = match get_config() {
+        let css = match get_css() {
             Ok(config) => config,
             Err(_) => {
                 warn!("Configuration file could not be parsed, using default configuration");
@@ -110,8 +109,7 @@ impl StatusBar {
         };
 
         let mut listeners = Listeners::new();
-        let information = config
-            .0
+        let information = CONFIG
             .modules
             .iter()
             .filter_map(|module| {
@@ -168,11 +166,10 @@ impl StatusBar {
 
         let config_dir = dirs::config_dir().unwrap();
 
-        let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
-        //let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
-        let hot_config = HotConfig {
-            config: config.0,
-            listener: listeners.new_file_listener(&config_path),
+        let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
+        let css = Css {
+            config: css,
+            listener: listeners.new_file_listener(&css_path),
         };
 
         listeners.start_all();
@@ -188,8 +185,7 @@ impl StatusBar {
             draw: rx,
             cache: HashMap::new(),
             dispatch: true,
-            hot_config,
-            css: config.1,
+            css,
         }
     }
 
@@ -198,27 +194,23 @@ impl StatusBar {
             return Ok(());
         }
 
-        let config_changed = if self.hot_config.listener.try_recv().is_ok() {
-            self.hot_config.config = match get_config() {
-                Ok(config) => config.0,
+        let config_changed = if self.css.listener.try_recv().is_ok() {
+            self.css.config = match get_css() {
+                Ok(css) => css,
                 Err(_) => {
                     warn!("Configuration file could not be parsed, using default configuration");
                     toml::from_str(TOML).expect(MESSAGE)
                 }
             };
             self.surfaces.iter_mut().for_each(|surface| {
+                surface.layer_surface.set_anchor(match CONFIG.topbar {
+                    true => Anchor::TOP,
+                    false => Anchor::BOTTOM,
+                });
                 surface
                     .layer_surface
-                    .set_anchor(match self.hot_config.config.topbar {
-                        true => Anchor::TOP,
-                        false => Anchor::BOTTOM,
-                    });
-                surface
-                    .layer_surface
-                    .set_size(surface.width as u32, self.hot_config.config.height as u32);
-                surface
-                    .layer_surface
-                    .set_exclusive_zone(self.hot_config.config.height);
+                    .set_size(surface.width as u32, CONFIG.height as u32);
+                surface.layer_surface.set_exclusive_zone(CONFIG.height);
             });
 
             true
@@ -226,15 +218,13 @@ impl StatusBar {
             false
         };
 
-        let config = &self.hot_config.config;
-
         let unchanged = !self
             .information
             .par_iter_mut()
             .map(|info| {
                 if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
                     let output =
-                        get_command_output(&info.command).unwrap_or(config.unkown.to_string());
+                        get_command_output(&info.command).unwrap_or(CONFIG.unkown.to_string());
 
                     if output != info.output || config_changed {
                         let format = info.format.replace("%s", &output);
@@ -256,7 +246,7 @@ impl StatusBar {
                             _ => format,
                         };
 
-                        let name = match info.command {
+                        let name = match &info.command {
                             Cmd::Workspaces(_) => "workspaces",
                             Cmd::Memory(_, _, _) => "memory",
                             Cmd::Cpu(_, _) => "cpu",
@@ -266,7 +256,7 @@ impl StatusBar {
                             Cmd::Custom(_, _, _) => "custom",
                         };
 
-                        let mut css = self.css.clone();
+                        let mut css = self.css.config.clone();
                         if let Some(index) = css.find(name) {
                             let closest_brace_index = css[index..].find('}').map(|i| i + index);
                             css = css[index..closest_brace_index.unwrap()].to_string();
@@ -296,20 +286,21 @@ impl StatusBar {
         self.cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
-            let height = config.height;
+            let height = CONFIG.height;
 
             if config_changed {
                 let img_surface =
-                    ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
+                    ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
 
-                let background = config.background;
-                let font = &config.font;
+                let background = CONFIG.background;
+                let font = &CONFIG.font;
 
-                context.set_source_rgb(
+                context.set_source_rgba(
                     background[0] as f64 / 255.0,
                     background[1] as f64 / 255.0,
                     background[2] as f64 / 255.0,
+                    background[3] as f64 / 255.0,
                 );
                 _ = context.paint();
                 context.set_source_rgb(
@@ -336,15 +327,15 @@ impl StatusBar {
                     );
                 });
 
-                self.cache.insert(width, background.to_rgb8());
+                self.cache.insert(width, background.to_rgba8());
             }
 
             // This will always be Some at this point
             let img = self.cache.get(&width).unwrap();
 
-            let mut pool = SlotPool::new(width as usize * height as usize * 3, &self.shm)?;
+            let mut pool = SlotPool::new(width as usize * height as usize * 4, &self.shm)?;
             let (buffer, canvas) =
-                pool.create_buffer(width, height, width * 3, wl_shm::Format::Bgr888)?;
+                pool.create_buffer(width, height, width * 4, wl_shm::Format::Abgr8888)?;
 
             canvas.copy_from_slice(img);
 
@@ -382,7 +373,7 @@ impl OutputHandler for StatusBar {
         );
 
         if let Some(info) = self.output_state.info(&output) {
-            let config = &self.hot_config.config;
+            let config = &CONFIG;
             let height = config.height;
             if let Some((width, _)) = info.logical_size {
                 layer.set_anchor(match config.topbar {
@@ -395,23 +386,18 @@ impl OutputHandler for StatusBar {
                 layer.commit();
 
                 let img_surface =
-                    ImageSurface::create(cairo::Format::Rgb30, width, height).unwrap();
+                    ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
 
                 let background = config.background;
-                let font = &config.font;
 
-                context.set_source_rgb(
+                context.set_source_rgba(
                     background[0] as f64 / 255.0,
                     background[1] as f64 / 255.0,
                     background[2] as f64 / 255.0,
+                    background[3] as f64 / 255.0,
                 );
                 _ = context.paint();
-                context.set_source_rgb(
-                    font.color[0] as f64 / 255.0,
-                    font.color[1] as f64 / 255.0,
-                    font.color[2] as f64 / 255.0,
-                );
 
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);
@@ -556,10 +542,7 @@ async fn main() {
 
     {
         let (tx, rx) = broadcast::channel(1);
-        receivers.push((
-            std::mem::replace(&mut status_bar.hot_config.listener, rx),
-            tx,
-        ))
+        receivers.push((std::mem::replace(&mut status_bar.css.listener, rx), tx))
     }
 
     setup_listeners(receivers, tx);

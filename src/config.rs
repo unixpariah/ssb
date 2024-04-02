@@ -1,12 +1,17 @@
 use crate::{
     util::helpers::{CSS, TOML},
-    Cmd,
+    Cmd, MESSAGE,
 };
+use lazy_static::lazy_static;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-pub fn get_config() -> Result<(Config, String), Box<dyn crate::Error>> {
+lazy_static! {
+    pub static ref CONFIG: Config = get_config().unwrap_or(toml::from_str(TOML).expect(MESSAGE));
+}
+
+pub fn get_css() -> Result<String, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
         Some(dir) => dir,
         None => {
@@ -14,17 +19,7 @@ pub fn get_config() -> Result<(Config, String), Box<dyn crate::Error>> {
             return Err("".into());
         }
     };
-    let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
     let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
-
-    if !config_path.exists() {
-        info!(
-            "Configuration file not found, generating new one at: {}",
-            config_path.display()
-        );
-        fs::create_dir_all(config_path.parent().ok_or("")?)?;
-        _ = fs::write(&config_path, TOML);
-    }
 
     if !css_path.exists() {
         info!(
@@ -35,10 +30,31 @@ pub fn get_config() -> Result<(Config, String), Box<dyn crate::Error>> {
         _ = fs::write(&css_path, CSS);
     }
 
-    let config = toml::from_str::<Config>(&fs::read_to_string(&config_path)?.trim())?;
-    let css = fs::read_to_string(&css_path)?;
+    Ok(fs::read_to_string(&css_path)?)
+}
 
-    Ok((config, css))
+pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
+    let config_dir = match dirs::config_dir() {
+        Some(dir) => dir,
+        None => {
+            warn!("Configuration directory not found, using default configuration");
+            return Err("".into());
+        }
+    };
+    let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
+
+    if !config_path.exists() {
+        info!(
+            "Configuration file not found, generating new one at: {}",
+            config_path.display()
+        );
+        fs::create_dir_all(config_path.parent().ok_or("")?)?;
+        _ = fs::write(&config_path, TOML);
+    }
+
+    let config = toml::from_str::<Config>(fs::read_to_string(&config_path)?.trim())?;
+
+    Ok(config)
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -46,7 +62,7 @@ pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: String,
     #[serde(default = "background")]
-    pub background: [u8; 3],
+    pub background: [u8; 4],
     #[serde(default = "topbar")]
     pub topbar: bool,
     #[serde(default = "height")]
@@ -61,8 +77,8 @@ fn unkown() -> String {
     "N/A".to_string()
 }
 
-fn background() -> [u8; 3] {
-    [20, 15, 33]
+fn background() -> [u8; 4] {
+    [20, 15, 33, 255]
 }
 
 fn topbar() -> bool {

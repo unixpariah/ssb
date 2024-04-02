@@ -1,6 +1,6 @@
 pub const TOML: &str = r#"
 unkown = "N/A" # Default value for unknown commands
-background = [20, 15, 33] # Background color as RGB value
+background = [20, 15, 33, 0] # Background color as RGB value
 topbar = true # true for bar at top of the screen, false for bar at bottom of the screen
 height = 40 # Height of the bar
 
@@ -109,44 +109,51 @@ command.Custom = ["iwgetid -r", { TimePassed = 10000 }, "  %s"]
 
 pub const CSS: &str = r#"
 backlight {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 
 battery {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 
 audio {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 
 cpu {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 
 memory {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 
 workspaces {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 
 custom {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    content: "a";
 }
 "#;
