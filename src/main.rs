@@ -37,6 +37,8 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
+use crate::util::helpers::CSS;
+
 // TODO: make these vecs of strings optional
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Cmd {
@@ -165,7 +167,6 @@ impl StatusBar {
             .collect();
 
         let config_dir = dirs::config_dir().unwrap();
-
         let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
         let css = Css {
             config: css,
@@ -256,13 +257,24 @@ impl StatusBar {
                             Cmd::Custom(_, _, _) => "custom",
                         };
 
-                        let mut css = self.css.config.clone();
-                        if let Some(index) = css.find(name) {
-                            let closest_brace_index = css[index..].find('}').map(|i| i + index);
-                            css = css[index..closest_brace_index.unwrap()].to_string();
-                            css.push_str(&format!(" content: \"{}\"; }}", format));
-                        };
+                        let css = &self.css.config;
+                        let css = css.find(name).map_or_else(|| {
+                            warn!("Style declaration for module {name} not found, using default style");
+                            let index = CSS.find(name).expect(MESSAGE);
+                            let end_index = CSS[index..].find('}').map(|i| i + index).unwrap();
+                            let mut css_section = CSS[index..end_index].to_string();
+                            css_section.push_str(&format!(" content: \"{}\"; }}", format)); 
+                            css_section 
+                        },
+                            |index| {
+                                let end_index = css[index..].find('}').map(|i| i + index).unwrap();
+                                let mut css_section = css[index..end_index].to_string();
+                                css_section.push_str(&format!(" content: \"{}\"; }}", format));
+                                css_section 
+                            },
+                        );
 
+                        // If this panics then either the crate is broken or I forgot to update the default css
                         let img = css_image::parse(css.to_string()).unwrap();
                         let img = img.get(name);
                         if let Ok(img) = image::load_from_memory(img.unwrap()) {
