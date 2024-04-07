@@ -1,6 +1,6 @@
 pub const TOML: &str = r#"
 unkown = "N/A" # Default value for unknown commands
-background = [20, 15, 33, 0] # Background color as RGB value
+background = [20, 15, 33, 255] # Background color as RGB value
 topbar = true # true for bar at top of the screen, false for bar at bottom of the screen
 height = 40 # Height of the bar
 
@@ -25,6 +25,11 @@ x = 35.0
 y = 20.0
 command.Workspaces = [" ", " "]
 
+[[modules]]
+x = 925.0
+y = 20.0
+command.Custom = ["date +%H:%M", "date", { TimePassed = 60000 }, " %s"]
+
 # Battery Module
 
 # This module displays the battery status. It takes three arguments: 
@@ -35,6 +40,28 @@ command.Workspaces = [" ", " "]
 x = 1390.0
 y = 20.0
 command.Battery = [5000, "%c %s%", ["󰁺" ,"󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]]
+
+
+# Backlight Module
+
+# This module is designed to show the level of screen backlight. It requires two arguments: 
+# the display format (where "%s" is a placeholder for the value and "%c" is a placeholder for icons), and an array of icons.
+
+[[modules]]
+x = 1475.0
+y = 20.0
+command.Backlight = ["%c %s%", ["", "", "", "", "", "", "", "", ""]]
+
+
+# Audio Module
+
+# This module is designed to control and display the audio level. It takes two arguments: 
+# the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
+
+[[modules]]
+x = 1540.0
+y = 20.0
+command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
 
 # Memory Module
 
@@ -55,32 +82,12 @@ command.Memory = ["PercUsed", 5000, "󰍛 %s%"]
 [[modules]]
 x = 1700.0
 y = 20.0
-command.Cpu = [5000, " %s%"]
-
-# Backlight Module
-
-# This module is designed to show the level of screen backlight. It requires two arguments: 
-# the display format (where "%s" is a placeholder for the value and "%c" is a placeholder for icons), and an array of icons.
-
-[[modules]]
-x = 1475.0
-y = 20.0
-command.Backlight = ["%c %s%", ["", "", "", "", "", "", "", "", ""]]
-
-# Audio Module
-
-# This module is designed to control and display the audio level. It takes two arguments: 
-# the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
-
-[[modules]]
-x = 1540.0
-y = 20.0
-command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
+command.Cpu = [5000, "󰍛 %s%"]
 
 # Custom Module
 
-# This module allows for custom commands. It takes three arguments: the command to execute, 
-# the trigger event, and the formatting for the display (with "%s" as a placeholder for the value).
+# This module allows for custom commands. It takes four arguments: the command to execute, 
+# the trigger event, name for css selector, and the formatting for the display (with "%s" as a placeholder for the value).
 
 # Available trigger Events:
 
@@ -97,14 +104,9 @@ command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
 # This event is triggered when the volume changes. It doesn't take any arguments.
 
 [[modules]]
-x = 925.0
-y = 20.0
-command.Custom = ["date +%H:%M", { TimePassed = 60000 }, " %s"]
-
-[[modules]]
 x = 1775.0
 y = 20.0
-command.Custom = ["iwgetid -r", { TimePassed = 10000 }, "  %s"]
+command.Custom = ["iwgetid -r", "connection", { TimePassed = 10000 }, "  %s"]
 "#;
 
 pub const CSS: &str = r#"
@@ -113,6 +115,8 @@ backlight {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 25px;
+    margin-top: 10px;
 }
 
 battery {
@@ -120,6 +124,8 @@ battery {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 400px;
+    margin-top: 10px;
 }
 
 audio {
@@ -127,6 +133,8 @@ audio {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 25px;
+    margin-top: 10px;
 }
 
 cpu {
@@ -134,6 +142,8 @@ cpu {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 10px;
+    margin-top: 10px;
 }
 
 memory {
@@ -141,6 +151,8 @@ memory {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 45px;
+    margin-top: 10px;
 }
 
 workspaces {
@@ -148,12 +160,25 @@ workspaces {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 35px;
+    margin-top: 10px;
 }
 
-custom {
+date {
     font-family: "JetBrainsMono Nerd Font";
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-left: 815px;
+    margin-top: 10px;
+}
+
+connection {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
+    font-weight: bold;
+    color: #ffffff;
+    margin-left: 35px;
+    margin-top: 10px;
 }
 "#;

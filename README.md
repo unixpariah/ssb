@@ -85,6 +85,6 @@ Styling with css is handled by [css-image](https://github.com/unixpariah/css-ima
 
 ## TODO
 - Add sway support (and other compositors as well)
-- Add Tray
 - Hot configuration modules
+- Add Tray
 - Fix crashing when new output is added

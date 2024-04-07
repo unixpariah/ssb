@@ -2,6 +2,7 @@ mod config;
 mod modules;
 mod util;
 
+use crate::util::helpers::CSS;
 use cairo::{Context, ImageSurface};
 use config::{get_config, get_css, Config};
 use image::{imageops, ColorType, DynamicImage, RgbaImage};
@@ -25,7 +26,11 @@ use smithay_client_toolkit::{
     },
     shm::{slot::SlotPool, Shm, ShmHandler},
 };
-use std::{collections::HashMap, error::Error, sync::mpsc};
+use std::{
+    collections::HashMap,
+    error::Error,
+    sync::{mpsc, Once},
+};
 use tokio::sync::broadcast;
 use util::{
     helpers::TOML,
@@ -37,12 +42,10 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
-use crate::util::helpers::CSS;
-
 // TODO: make these vecs of strings optional
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Cmd {
-    Custom(String, Trigger, String),
+    Custom(String, String, Trigger, String),
     Workspaces([String; 2]),
     Backlight(String, Vec<String>),
     Memory(MemoryOpts, u64, String),
@@ -63,8 +66,6 @@ struct Surface {
 pub struct ModuleData {
     output: String,
     command: Cmd,
-    x: f64,
-    y: f64,
     format: String,
     receiver: broadcast::Receiver<()>,
     cache: DynamicImage,
@@ -77,10 +78,10 @@ struct StatusBar {
     surfaces: Vec<Surface>,
     layer_shell: LayerShell,
     compositor_state: CompositorState,
-    information: Vec<ModuleData>,
-    draw: mpsc::Receiver<()>,
-    cache: HashMap<i32, RgbaImage>,
-    dispatch: bool,
+    module_info: Vec<ModuleData>,
+    draw_receiver: mpsc::Receiver<()>,
+    image_cache: HashMap<i32, RgbaImage>,
+    dispatch_flag: bool,
     config: HotConfig,
 }
 
@@ -92,6 +93,7 @@ struct HotConfig {
 }
 
 static MESSAGE: &str = "If you see this, please contact lazy ass developer behind this project who did not care to update default config";
+static START: Once = Once::new();
 
 impl StatusBar {
     fn new(
@@ -121,7 +123,7 @@ impl StatusBar {
         };
 
         let mut listeners = Listeners::new();
-        let information = config
+        let module_info = config
             .modules
             .iter()
             .filter_map(|module| {
@@ -153,7 +155,7 @@ impl StatusBar {
                     Cmd::Audio(format, _) => {
                         (listeners.new_volume_change_listener(), format.as_str())
                     }
-                    Cmd::Custom(_, trigger, format) => {
+                    Cmd::Custom(_, _, trigger, format) => {
                         let trigger = match trigger {
                             Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                             Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
@@ -167,8 +169,6 @@ impl StatusBar {
                 Some(ModuleData {
                     output: String::new(),
                     command: module.command.to_owned(),
-                    x: module.x,
-                    y: module.y,
                     format: format.to_string(),
                     receiver,
                     cache: DynamicImage::new(0, 0, ColorType::L8),
@@ -196,19 +196,15 @@ impl StatusBar {
             registry_state: RegistryState::new(globals),
             shm,
             surfaces: Vec::new(),
-            information,
-            draw: rx,
-            cache: HashMap::new(),
-            dispatch: true,
+            module_info,
+            draw_receiver: rx,
+            image_cache: HashMap::new(),
+            dispatch_flag: true,
             config,
         }
     }
 
     fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
-            return Ok(());
-        }
-
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
             self.config.css = match get_css() {
@@ -228,21 +224,26 @@ impl StatusBar {
                     toml::from_str(TOML).expect(MESSAGE)
                 }
             };
+            self.config.config.modules = Vec::new(); // Drop it as its not gonna be used anymore
             self.surfaces.iter_mut().for_each(|surface| {
-                surface.layer_surface.set_anchor(match self.config.config.topbar {
-                    true => Anchor::TOP,
-                    false => Anchor::BOTTOM,
-                });
+                surface
+                    .layer_surface
+                    .set_anchor(match self.config.config.topbar {
+                        true => Anchor::TOP,
+                        false => Anchor::BOTTOM,
+                    });
                 surface
                     .layer_surface
                     .set_size(surface.width as u32, self.config.config.height as u32);
-                surface.layer_surface.set_exclusive_zone(self.config.config.height);
+                surface
+                    .layer_surface
+                    .set_exclusive_zone(self.config.config.height);
             });
             config_changed = true;
         };
 
         let unchanged = !self
-            .information
+            .module_info
             .par_iter_mut()
             .map(|info| {
                 if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
@@ -276,7 +277,7 @@ impl StatusBar {
                             Cmd::Battery(_, _, _) => "battery",
                             Cmd::Backlight(_, _) => "backlight",
                             Cmd::Audio(_, _) => "audio",
-                            Cmd::Custom(_, _, _) => "custom",
+                            Cmd::Custom(_, name, _, _) => name,
                         };
 
                         let css = &self.config.css;
@@ -285,14 +286,14 @@ impl StatusBar {
                             let index = CSS.find(name).expect(MESSAGE);
                             let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
                             let mut css_section = CSS[index..end_index].to_string();
-                            css_section.push_str(&format!(" content: \"{}\"; }}", format)); 
-                            css_section 
+                            css_section.push_str(&format!(" content: \"{}\"; }}", format));
+                            css_section
                         },
                             |index| {
                                 let end_index = css[index..].find('}').map(|i| i + index).unwrap();
                                 let mut css_section = css[index..end_index].to_string();
                                 css_section.push_str(&format!(" content: \"{}\"; }}", format));
-                                css_section 
+                                css_section
                             },
                         );
 
@@ -318,16 +319,16 @@ impl StatusBar {
             .unwrap_or(false);
 
         if unchanged && !config_changed {
-            self.dispatch = false;
+            self.dispatch_flag = false;
             return Ok(());
         }
 
-        self.cache = HashMap::new();
+        self.image_cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
             let height = self.config.config.height;
 
-            if config_changed{
+            if config_changed {
                 let img_surface =
                     ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
@@ -354,23 +355,20 @@ impl StatusBar {
                 surface.background = image::load_from_memory(&background).unwrap();
             }
 
-            if self.cache.get(&width).is_none() {
+            if self.image_cache.get(&width).is_none() {
                 let mut background = surface.background.clone();
-                self.information.iter().for_each(|info| {
+                let mut prev = 0;
+                self.module_info.iter().for_each(|info| {
                     let img_cache = &info.cache;
-                    imageops::overlay(
-                        &mut background,
-                        img_cache,
-                        info.x as i64,
-                        info.y as i64 - img_cache.height() as i64 / 2,
-                    );
+                    imageops::overlay(&mut background, img_cache, prev, 0);
+                    prev += img_cache.width() as i64;
                 });
 
-                self.cache.insert(width, background.to_rgba8());
+                self.image_cache.insert(width, background.to_rgba8());
             }
 
             // This will always be Some at this point
-            let img = self.cache.get(&width).unwrap();
+            let img = self.image_cache.get(&width).unwrap();
 
             let mut pool = SlotPool::new(width as usize * height as usize * 4, &self.shm)?;
             let (buffer, canvas) =
@@ -385,7 +383,7 @@ impl StatusBar {
                 layer.wl_surface().commit();
             }
 
-            self.dispatch = true;
+            self.dispatch_flag = true;
             Ok::<(), Box<dyn Error>>(())
         })
     }
@@ -564,14 +562,11 @@ async fn main() {
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
     let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
-
     let (tx, rx) = mpsc::channel();
-
     let mut status_bar = StatusBar::new(&globals, &qh, rx);
     let mut skip = true;
-
     let mut receivers = status_bar
-        .information
+        .module_info
         .iter_mut()
         .map(|info| {
             let (tx, rx) = broadcast::channel(1);
@@ -581,15 +576,26 @@ async fn main() {
 
     {
         let (tx, rx) = broadcast::channel(1);
-        receivers.push((std::mem::replace(&mut status_bar.config.css_listener, rx), tx));
+        receivers.push((
+            std::mem::replace(&mut status_bar.config.css_listener, rx),
+            tx,
+        ));
         let (tx, rx) = broadcast::channel(1);
-        receivers.push((std::mem::replace(&mut status_bar.config.config_listener, rx), tx))
+        receivers.push((
+            std::mem::replace(&mut status_bar.config.config_listener, rx),
+            tx,
+        ))
     }
 
     setup_listeners(receivers, tx);
 
     loop {
-        status_bar.draw().expect("Failed to draw");
+        if status_bar.surfaces.iter().all(|surface| surface.configured)
+            && !status_bar.surfaces.is_empty()
+        {
+            status_bar.draw().expect("Failed to draw");
+        }
+
         status_bar.surfaces.iter_mut().for_each(|surface| {
             if !surface.configured {
                 surface.configured = true;
@@ -597,7 +603,7 @@ async fn main() {
             }
         });
 
-        if status_bar.dispatch {
+        if status_bar.dispatch_flag {
             event_queue
                 .blocking_dispatch(&mut status_bar)
                 .expect("Failed to dispatch events");
@@ -608,9 +614,11 @@ async fn main() {
             continue;
         }
 
-        println!("Time taken: {:?}", a.elapsed());
+        START.call_once(|| {
+            info!("Startup time: {:?}", a.elapsed());
+        });
         status_bar
-            .draw
+            .draw_receiver
             .recv()
             .expect("Failed to receive draw message");
     }

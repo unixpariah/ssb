@@ -24,7 +24,7 @@ pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
 
 pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
     Ok(match command {
-        Cmd::Custom(command, _, _) => match new_command(command) {
+        Cmd::Custom(command, _, _, _) => match new_command(command) {
             Ok(output) => output,
             Err(e) => {
                 warn!("Command '{command}' failed, using default value");
