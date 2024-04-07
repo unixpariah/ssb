@@ -2,8 +2,6 @@
 
 Ssb is a simple status bar for wayland written in rust.
 
-[![Build Status](https://github.com/unixpariah/ssb/actions/workflows/test.yml/badge.svg)](https://github.com/unixpariah/ssb/actions/workflows/test.yml) [![codecov](https://codecov.io/gh/unixpariah/ssb/graph/badge.svg?token=49LRWZ9D1K)](https://codecov.io/gh/unixpariah/ssb)
-
 ## Dependencies
 
 - Compositor implementing the wlr-layer-shell protocol (Hyprland, sway, wayfire, etc.)
@@ -59,7 +57,7 @@ Or if you want specific github revision
 
 1. Clone the repository and cd into it
 
-```sh 
+```sh
 git clone https://github.com/unixpariah/ssb.git && cd ssb
 ```
 

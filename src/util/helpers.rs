@@ -8,85 +8,23 @@ height = 40 # Height of the bar
 
 # Modules
 
-# Modules are individual components of the bar that display different information. 
-# Each module has a `command` which determines what information it displays, 
-# and `x` and `y` values which determine its position on the bar.
+# Modules are individual components of the bar that display different information.
+# Each module has a `command` which determines what information it displays,
 
 # Workspaces Module
 
-# This module displays the active and inactive workspaces. It takes two arguments: 
+# This module displays the active and inactive workspaces. It takes two arguments:
 # the icon for the active window and the icon for the inactive window.
 
 # Available for these compositors:
 # - Hyprland
 
-[[modules]]
-x = 35.0
-y = 20.0
+[[modules.left]]
 command.Workspaces = [" ", " "]
-
-[[modules]]
-x = 925.0
-y = 20.0
-command.Custom = ["date +%H:%M", "date", { TimePassed = 60000 }, " %s"]
-
-# Battery Module
-
-# This module displays the battery status. It takes three arguments: 
-# the update time in milliseconds, the formatting for the display (with "%s" as a placeholder 
-# for the value and %c as a placeholder for icons), and an array of icons.
-
-[[modules]]
-x = 1390.0
-y = 20.0
-command.Battery = [5000, "%c %s%", ["󰁺" ,"󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]]
-
-
-# Backlight Module
-
-# This module is designed to show the level of screen backlight. It requires two arguments: 
-# the display format (where "%s" is a placeholder for the value and "%c" is a placeholder for icons), and an array of icons.
-
-[[modules]]
-x = 1475.0
-y = 20.0
-command.Backlight = ["%c %s%", ["", "", "", "", "", "", "", "", ""]]
-
-
-# Audio Module
-
-# This module is designed to control and display the audio level. It takes two arguments: 
-# the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
-
-[[modules]]
-x = 1540.0
-y = 20.0
-command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
-
-# Memory Module
-
-# This module displays memory usage. It takes three arguments: 
-# the memory option (e.g., "PercUsed" to display the percentage of memory used), 
-# the update time in milliseconds, and the formatting for the display (with "%s" as a placeholder for the value).
-
-[[modules]]
-x = 1635.0
-y = 20.0
-command.Memory = ["PercUsed", 5000, "󰍛 %s%"]
-
-# CPU Module
-
-# This module displays CPU usage. It takes two arguments:  the update time in milliseconds, 
-# and the formatting for the display (with "%s" as a placeholder for the value).
-
-[[modules]]
-x = 1700.0
-y = 20.0
-command.Cpu = [5000, "󰍛 %s%"]
 
 # Custom Module
 
-# This module allows for custom commands. It takes four arguments: the command to execute, 
+# This module allows for custom commands. It takes four arguments: the command to execute,
 # the trigger event, name for css selector, and the formatting for the display (with "%s" as a placeholder for the value).
 
 # Available trigger Events:
@@ -95,7 +33,7 @@ command.Cpu = [5000, "󰍛 %s%"]
 # This event is triggered when the active workspace changes. It doesn't take any arguments.
 
 # FileChanged
-# This event is triggered when a specified file changes. It takes one argument: the path to the file to monitor for changes.
+# This event is triggered when a specified file is modified. It takes one argument: the path to the file
 
 # TimePassed
 # This event is triggered at regular intervals. It takes one argument: the time in milliseconds between updates.
@@ -103,10 +41,53 @@ command.Cpu = [5000, "󰍛 %s%"]
 # VolumeChanged
 # This event is triggered when the volume changes. It doesn't take any arguments.
 
-[[modules]]
-x = 1775.0
-y = 20.0
-command.Custom = ["iwgetid -r", "connection", { TimePassed = 10000 }, "  %s"]
+[[modules.center]]
+command.Custom = ["date +%H:%M", "date", { TimePassed = 60000 }, " %s"]
+
+[[modules.right]]
+command.Custom = ["iwgetid -r", "network", { TimePassed = 10000 }, "  %s"]
+
+# CPU Module
+
+# This module displays CPU usage. It takes two arguments:  the update time in milliseconds,
+# and the formatting for the display (with "%s" as a placeholder for the value).
+
+[[modules.right]]
+command.Cpu = [5000, "󰍛 %s%"]
+
+# Memory Module
+
+# This module displays memory usage. It takes three arguments:
+# the memory option (e.g., "PercUsed" to display the percentage of memory used),
+# the update time in milliseconds, and the formatting for the display (with "%s" as a placeholder for the value).
+
+[[modules.right]]
+command.Memory = ["PercUsed", 5000, "󰍛 %s%"]
+
+# Audio Module
+
+# This module is designed to control and display the audio level. It takes two arguments:
+# the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
+
+[[modules.right]]
+command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
+
+# Backlight Module
+
+# This module is designed to show the level of screen backlight. It requires two arguments:
+# the display format (where "%s" is a placeholder for the value and "%c" is a placeholder for icons), and an array of icons.
+
+[[modules.right]]
+command.Backlight = ["%c %s%", ["", "", "", "", "", "", "", "", ""]]
+
+# Battery Module
+
+# This module displays the battery status. It takes three arguments:
+# the update time in milliseconds, the formatting for the display (with "%s" as a placeholder
+# for the value and %c as a placeholder for icons), and an array of icons.
+
+[[modules.right]]
+command.Battery = [5000, "%c %s%", ["󰁺" ,"󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]]
 "#;
 
 pub const CSS: &str = r#"
@@ -115,6 +96,7 @@ backlight {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
+    margin-right: 10px;
     margin-left: 25px;
     margin-top: 10px;
 }
@@ -124,7 +106,6 @@ battery {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-left: 400px;
     margin-top: 10px;
 }
 
@@ -133,7 +114,7 @@ audio {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-left: 25px;
+    margin-right: 25px;
     margin-top: 10px;
 }
 
@@ -142,7 +123,7 @@ cpu {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-left: 10px;
+    margin-right: 25px;
     margin-top: 10px;
 }
 
@@ -151,7 +132,7 @@ memory {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-left: 45px;
+    margin-right: 10px;
     margin-top: 10px;
 }
 
@@ -169,16 +150,15 @@ date {
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-left: 815px;
     margin-top: 10px;
 }
 
-connection {
+network {
     font-family: "JetBrainsMono Nerd Font";
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-left: 35px;
+    margin-right: 25px;
     margin-top: 10px;
 }
 "#;

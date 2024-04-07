@@ -69,6 +69,14 @@ pub struct ModuleData {
     format: String,
     receiver: broadcast::Receiver<()>,
     cache: DynamicImage,
+    position: Position,
+}
+
+#[derive(Clone)]
+enum Position {
+    Left,
+    Center,
+    Right,
 }
 
 struct StatusBar {
@@ -123,10 +131,16 @@ impl StatusBar {
         };
 
         let mut listeners = Listeners::new();
-        let module_info = config
-            .modules
+
+        let positions = [
+            (Position::Left, &config.modules.left),
+            (Position::Center, &config.modules.center),
+            (Position::Right, &config.modules.right),
+        ];
+        let module_info = positions
             .iter()
-            .filter_map(|module| {
+            .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
+            .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
                     Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
                     Cmd::Memory(_, interval, format) => {
@@ -172,6 +186,7 @@ impl StatusBar {
                     format: format.to_string(),
                     receiver,
                     cache: DynamicImage::new(0, 0, ColorType::L8),
+                    position: position.clone(),
                 })
             })
             .collect();
@@ -224,7 +239,7 @@ impl StatusBar {
                     toml::from_str(TOML).expect(MESSAGE)
                 }
             };
-            self.config.config.modules = Vec::new(); // Drop it as its not gonna be used anymore
+            std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used anymore
             self.surfaces.iter_mut().for_each(|surface| {
                 surface
                     .layer_surface
@@ -357,11 +372,30 @@ impl StatusBar {
 
             if self.image_cache.get(&width).is_none() {
                 let mut background = surface.background.clone();
-                let mut prev = 0;
+                let mut left = 0;
+                let mut right = background.width() as i64;
+                let mut center = background.width() as i64 / 2;
                 self.module_info.iter().for_each(|info| {
-                    let img_cache = &info.cache;
-                    imageops::overlay(&mut background, img_cache, prev, 0);
-                    prev += img_cache.width() as i64;
+                    let img = &info.cache;
+                    match info.position {
+                        Position::Left => {
+                            imageops::overlay(&mut background, img, left, 0);
+                            left += img.width() as i64;
+                        }
+                        Position::Center => {
+                            imageops::overlay(
+                                &mut background,
+                                img,
+                                center - img.width() as i64 / 2,
+                                0,
+                            );
+                            center += img.width() as i64;
+                        }
+                        Position::Right => {
+                            right -= img.width() as i64;
+                            imageops::overlay(&mut background, img, right, 0);
+                        }
+                    };
                 });
 
                 self.image_cache.insert(width, background.to_rgba8());
