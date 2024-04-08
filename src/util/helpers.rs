@@ -1,3 +1,34 @@
+use image::{GenericImageView, ImageBuffer};
+
+pub fn combine_images(images: &Vec<&image::DynamicImage>) -> image::DynamicImage {
+    let mut total_width = 0;
+    let mut max_height = 0;
+
+    for img in images {
+        let (width, height) = img.dimensions();
+        total_width += width;
+        if height > max_height {
+            max_height = height;
+        }
+    }
+
+    let mut new_img = ImageBuffer::new(total_width, max_height);
+
+    let mut current_width = 0;
+    for img in images {
+        let (width, height) = img.dimensions();
+        for x in 0..width {
+            for y in 0..height {
+                let pixel = img.get_pixel(x, y);
+                new_img.put_pixel(x + current_width, y, pixel);
+            }
+        }
+        current_width += width;
+    }
+
+    image::DynamicImage::ImageRgba8(new_img)
+}
+
 pub const TOML: &str = r#"
 unkown = "N/A" # Default value for unknown commands
 background = [20, 15, 33, 255] # Background color as RGB value
