@@ -1,30 +1,34 @@
-use image::{GenericImageView, ImageBuffer};
+use std::sync::atomic::AtomicBool;
 
-pub fn combine_images(images: &Vec<&image::DynamicImage>) -> image::DynamicImage {
-    let mut total_width = 0;
-    let mut max_height = 0;
+use image::{DynamicImage, GenericImageView, ImageBuffer};
 
-    for img in images {
-        let (width, height) = img.dimensions();
-        total_width += width;
-        if height > max_height {
-            max_height = height;
-        }
+pub fn update_position_cache<'a>(
+    position: &'a mut (DynamicImage, AtomicBool),
+    images: &[&DynamicImage],
+) -> &'a DynamicImage {
+    if position.1.load(std::sync::atomic::Ordering::Relaxed) {
+        position
+            .1
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        position.0 = combine_images(images);
     }
+    &position.0
+}
 
+fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
+    let total_width = images.iter().map(|img| img.width()).sum();
+    let max_height = images.iter().map(|img| img.height()).max().unwrap_or(0);
     let mut new_img = ImageBuffer::new(total_width, max_height);
-
-    let mut current_width = 0;
-    for img in images {
+    images.iter().fold(0, |acc, img| {
         let (width, height) = img.dimensions();
-        for x in 0..width {
-            for y in 0..height {
+        (0..width).for_each(|x| {
+            (0..height).for_each(|y| {
                 let pixel = img.get_pixel(x, y);
-                new_img.put_pixel(x + current_width, y, pixel);
-            }
-        }
-        current_width += width;
-    }
+                new_img.put_pixel(x + acc, y, pixel);
+            });
+        });
+        acc + width
+    });
 
     image::DynamicImage::ImageRgba8(new_img)
 }

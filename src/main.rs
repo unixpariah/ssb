@@ -29,11 +29,11 @@ use smithay_client_toolkit::{
 use std::{
     collections::HashMap,
     error::Error,
-    sync::{mpsc, Once},
+    sync::{atomic::AtomicBool, mpsc},
 };
 use tokio::sync::broadcast;
 use util::{
-    helpers::{combine_images, TOML},
+    helpers::{update_position_cache, TOML},
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -79,6 +79,22 @@ enum Position {
     Right,
 }
 
+struct PositionCache {
+    left: (DynamicImage, AtomicBool),
+    center: (DynamicImage, AtomicBool),
+    right: (DynamicImage, AtomicBool),
+}
+
+impl PositionCache {
+    fn new() -> Self {
+        Self {
+            left: (DynamicImage::new(0, 0, ColorType::L8), true.into()),
+            center: (DynamicImage::new(0, 0, ColorType::L8), true.into()),
+            right: (DynamicImage::new(0, 0, ColorType::L8), true.into()),
+        }
+    }
+}
+
 struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
@@ -91,6 +107,8 @@ struct StatusBar {
     image_cache: HashMap<i32, RgbaImage>,
     dispatch_flag: bool,
     config: HotConfig,
+    position_cache: PositionCache,
+    first_configure: bool,
 }
 
 struct HotConfig {
@@ -101,7 +119,6 @@ struct HotConfig {
 }
 
 static MESSAGE: &str = "If you see this, please contact lazy ass developer behind this project who did not care to update default config";
-static START: Once = Once::new();
 
 impl StatusBar {
     fn new(
@@ -113,46 +130,36 @@ impl StatusBar {
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
-
-        let css = match get_css() {
-            Ok(config) => config,
-            Err(_) => {
-                warn!("CSS could not be parsed, using default styles");
-                toml::from_str(CSS).expect(MESSAGE)
-            }
-        };
-
-        let config = match get_config() {
-            Ok(config) => config,
-            Err(_) => {
-                warn!("Config file could not be parsed, using default configuration");
-                toml::from_str(TOML).expect(MESSAGE)
-            }
-        };
+        let css = get_css().unwrap_or_else(|_| {
+            warn!("CSS could not be parsed, using default styles");
+            toml::from_str(CSS).expect(MESSAGE)
+        });
+        let config = get_config().unwrap_or_else(|_| {
+            warn!("Config file could not be parsed, using default configuration");
+            toml::from_str(TOML).expect(MESSAGE)
+        });
 
         let mut listeners = Listeners::new();
-
         let positions = [
             (Position::Left, &config.modules.left),
             (Position::Center, &config.modules.center),
             (Position::Right, &config.modules.right),
         ];
-        let module_info = positions
+
+        let module_info: Vec<_> = positions
             .iter()
             .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
                     Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                    Cmd::Memory(_, interval, format) => {
-                        (listeners.new_time_listener(*interval), format.as_str())
-                    }
-                    Cmd::Cpu(interval, format) => {
-                        (listeners.new_time_listener(*interval), format.as_str())
-                    }
-                    Cmd::Battery(interval, format, _) => {
-                        if battery_details().is_err() {
-                            warn!("Battery not found, deactivating module");
-                            return None;
+                    Cmd::Memory(_, interval, format)
+                    | Cmd::Cpu(interval, format)
+                    | Cmd::Battery(interval, format, _) => {
+                        if let Cmd::Battery(_, _, _) = &module.command {
+                            if battery_details().is_err() {
+                                warn!("Battery not found, deactivating module");
+                                return None;
+                            }
                         }
                         (listeners.new_time_listener(*interval), format.as_str())
                     }
@@ -191,10 +198,9 @@ impl StatusBar {
             })
             .collect();
 
-        let config_dir = dirs::config_dir().unwrap();
+        let config_dir = dirs::config_dir().expect("Failed to get config directory");
         let css_path = config_dir.join(format!("{}/style.css", env!("CARGO_PKG_NAME")));
         let config_path = config_dir.join("config.toml");
-
         let config = HotConfig {
             css,
             css_listener: listeners.new_file_listener(&css_path),
@@ -216,31 +222,32 @@ impl StatusBar {
             image_cache: HashMap::new(),
             dispatch_flag: true,
             config,
+            position_cache: PositionCache::new(),
+            first_configure: true,
         }
     }
 
-    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+    fn draw(&mut self, qh: &wayland_client::QueueHandle<Self>) -> Result<(), Box<dyn Error>> {
+        self.draw_receiver
+            .recv()
+            .expect("Failed to receive draw message");
+        println!("a");
+
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
-            self.config.css = match get_css() {
-                Ok(css) => css,
-                Err(_) => {
-                    warn!("CSS could not be parsed, using default styles");
-                    toml::from_str(CSS).expect(MESSAGE)
-                }
-            };
+            self.config.css = get_css().unwrap_or_else(|_| {
+                warn!("CSS could not be parsed, using default styles");
+                toml::from_str(CSS).expect(MESSAGE)
+            });
             config_changed = true;
         }
         if self.config.config_listener.try_recv().is_ok() {
-            self.config.config = match get_config() {
-                Ok(config) => config,
-                Err(_) => {
-                    warn!("Config file could not be parsed, using default configuration");
-                    toml::from_str(TOML).expect(MESSAGE)
-                }
-            };
+            self.config.config = get_config().unwrap_or_else(|_| {
+                warn!("Config file could not be parsed, using default configuration");
+                toml::from_str(TOML).expect(MESSAGE)
+            });
             std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used anymore
-            self.surfaces.iter_mut().for_each(|surface| {
+            self.surfaces.par_iter_mut().for_each(|surface| {
                 surface
                     .layer_surface
                     .set_anchor(match self.config.config.topbar {
@@ -262,10 +269,17 @@ impl StatusBar {
             .par_iter_mut()
             .map(|info| {
                 if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
-                    let output =
-                        get_command_output(&info.command).unwrap_or(self.config.config.unkown.to_string());
+                    let output = get_command_output(&info.command)
+                        .unwrap_or(self.config.config.unkown.to_string());
 
                     if output != info.output || config_changed {
+                        match info.position {
+                            Position::Left => self.position_cache.left.1.store(true, std::sync::atomic::Ordering::Relaxed),
+                            Position::Center =>
+                                self.position_cache.center.1.store(true, std::sync::atomic::Ordering::Relaxed),
+                            Position::Right => self.position_cache.right.1.store(true, std::sync::atomic::Ordering::Relaxed),
+                        };
+
                         let format = info.format.replace("%s", &output);
                         let format = match &info.command {
                             Cmd::Battery(_, _, icons)
@@ -296,30 +310,29 @@ impl StatusBar {
                         };
 
                         let css = &self.config.css;
-                        let css = css.find(name).map_or_else(|| {
+                        let css_section = css.find(name).map_or_else(|| {
                             warn!("Style declaration for module {name} not found, using default style");
                             let index = CSS.find(name).expect(MESSAGE);
                             let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                            let mut css_section = CSS[index..end_index].to_string();
-                            css_section.push_str(&format!(" content: \"{}\"; }}", format));
-                            css_section
+                            CSS[index..end_index].to_string()
                         },
                             |index| {
                                 let end_index = css[index..].find('}').map(|i| i + index).unwrap();
-                                let mut css_section = css[index..end_index].to_string();
-                                css_section.push_str(&format!(" content: \"{}\"; }}", format));
-                                css_section
+                                css[index..end_index].to_string()
                             },
                         );
 
-                        let img = css_image::parse(css.to_string()).unwrap_or_else(|_|  {
-                                warn!("Failed to parse {name} module css, using default style");
-                                let index = CSS.find(name).expect(MESSAGE);
-                                let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                                let mut css = CSS[index..end_index].to_string();
-                                css.push_str(&format!(" content: \"{}\"; }}", format));
-                                css_image::parse(css).expect(MESSAGE)
+                        let css_section = format!("{} content: \"{}\"; }}", css_section, format);
+                        let img = css_image::parse(css_section.clone()).unwrap_or_else(|_| {
+                            warn!("Failed to parse {name} module css, using default style");
+                            let index = CSS.find(name).expect(MESSAGE);
+                            let end_index =
+                                CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                            let mut css = CSS[index..end_index].to_string();
+                            css.push_str(&format!(" content: \"{}\"; }}", format));
+                            css_image::parse(css).expect(MESSAGE)
                         });
+
                         if let Ok(img) = image::load_from_memory(img.get(name).unwrap()) {
                             info.cache = img;
                         }
@@ -330,13 +343,10 @@ impl StatusBar {
                 };
                 false
             })
-            .reduce_with(|a, b| if b { b } else { a })
+            .reduce_with(|a, b| a || b)
             .unwrap_or(false);
 
-        if unchanged && !config_changed {
-            self.dispatch_flag = false;
-            return Ok(());
-        }
+        if unchanged && !config_changed {}
 
         self.image_cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
@@ -347,10 +357,7 @@ impl StatusBar {
                 let img_surface =
                     ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
-
                 let background = self.config.config.background;
-                let font = &self.config.config.font;
-
                 context.set_source_rgba(
                     background[0] as f64 / 255.0,
                     background[1] as f64 / 255.0,
@@ -358,15 +365,8 @@ impl StatusBar {
                     background[3] as f64 / 255.0,
                 );
                 _ = context.paint();
-                context.set_source_rgb(
-                    font.color[0] as f64 / 255.0,
-                    font.color[1] as f64 / 255.0,
-                    font.color[2] as f64 / 255.0,
-                );
-
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);
-
                 surface.background = image::load_from_memory(&background).unwrap();
             }
 
@@ -386,20 +386,20 @@ impl StatusBar {
                 );
                 right_imgs.reverse();
 
-                let left = combine_images(&left_imgs);
-                let center = combine_images(&center_imgs);
-                let right = combine_images(&right_imgs);
+                let left = update_position_cache(&mut self.position_cache.left, &left_imgs);
+                let center = update_position_cache(&mut self.position_cache.center, &center_imgs);
+                let right = update_position_cache(&mut self.position_cache.right, &right_imgs);
 
-                imageops::overlay(&mut background, &left, 0, 0);
+                imageops::overlay(&mut background, left, 0, 0);
                 imageops::overlay(
                     &mut background,
-                    &center,
+                    center,
                     width as i64 / 2 - center.width() as i64 / 2,
                     0,
                 );
                 imageops::overlay(
                     &mut background,
-                    &right,
+                    right,
                     width as i64 - right.width() as i64,
                     0,
                 );
@@ -409,7 +409,6 @@ impl StatusBar {
 
             // This will always be Some at this point
             let img = self.image_cache.get(&width).unwrap();
-
             let mut pool = SlotPool::new(width as usize * height as usize * 4, &self.shm)?;
             let (buffer, canvas) =
                 pool.create_buffer(width, height, width * 4, wl_shm::Format::Abgr8888)?;
@@ -419,6 +418,7 @@ impl StatusBar {
             if surface.configured {
                 let layer = &surface.layer_surface;
                 layer.wl_surface().damage_buffer(0, 0, width, height);
+                layer.wl_surface().frame(qh, layer.wl_surface().clone());
                 layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
                 layer.wl_surface().commit();
             }
@@ -526,11 +526,15 @@ impl LayerShellHandler for StatusBar {
     fn configure(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
         _configure: smithay_client_toolkit::shell::wlr_layer::LayerSurfaceConfigure,
         _serial: u32,
     ) {
+        if self.first_configure {
+            self.first_configure = false;
+            self.draw(qh).expect("Failed to draw");
+        }
     }
 
     fn closed(
@@ -564,10 +568,11 @@ impl CompositorHandler for StatusBar {
     fn frame(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _surface: &wayland_client::protocol::wl_surface::WlSurface,
         _time: u32,
     ) {
+        _ = self.draw(qh);
     }
 }
 
@@ -596,7 +601,6 @@ fn setup_listeners(
 
 #[tokio::main]
 async fn main() {
-    let a = std::time::Instant::now();
     logger();
 
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
@@ -604,7 +608,7 @@ async fn main() {
     let qh = event_queue.handle();
     let (tx, rx) = mpsc::channel();
     let mut status_bar = StatusBar::new(&globals, &qh, rx);
-    let mut skip = true;
+
     let mut receivers = status_bar
         .module_info
         .iter_mut()
@@ -624,43 +628,14 @@ async fn main() {
         receivers.push((
             std::mem::replace(&mut status_bar.config.config_listener, rx),
             tx,
-        ))
+        ));
     }
 
     setup_listeners(receivers, tx);
-
     loop {
-        if status_bar.surfaces.iter().all(|surface| surface.configured)
-            && !status_bar.surfaces.is_empty()
-        {
-            status_bar.draw().expect("Failed to draw");
-        }
-
-        status_bar.surfaces.iter_mut().for_each(|surface| {
-            if !surface.configured {
-                surface.configured = true;
-                skip = true;
-            }
-        });
-
-        if status_bar.dispatch_flag {
-            event_queue
-                .blocking_dispatch(&mut status_bar)
-                .expect("Failed to dispatch events");
-        }
-
-        if skip {
-            skip = false;
-            continue;
-        }
-
-        START.call_once(|| {
-            info!("Startup time: {:?}", a.elapsed());
-        });
-        status_bar
-            .draw_receiver
-            .recv()
-            .expect("Failed to receive draw message");
+        event_queue
+            .blocking_dispatch(&mut status_bar)
+            .expect("Failed to dispatch events");
     }
 }
 

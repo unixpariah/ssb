@@ -2,6 +2,16 @@
 
 Ssb is a simple status bar for wayland written in rust.
 
+## Available modules
+
+- Workspaces (Avaliable only for Hyprland atm)
+- Battery
+- Backlight
+- Pulseaudio
+- Memory
+- CPU average Load
+- Custom scripts
+
 ## Dependencies
 
 - Compositor implementing the wlr-layer-shell protocol (Hyprland, sway, wayfire, etc.)
@@ -10,14 +20,6 @@ Ssb is a simple status bar for wayland written in rust.
 - rust
 
 ## Installation
-
-### The cargo way (Not yet on cargo)
-
-Run this command
-
-```sh
-cargo install ssb
-```
 
 ### The nix way
 
@@ -84,5 +86,6 @@ Styling with css is handled by [css-image](https://github.com/unixpariah/css-ima
 ## TODO
 - Add sway support (and other compositors as well)
 - Hot configuration modules
+- Pointer capabilities
 - Add Tray
 - Fix crashing when new output is added

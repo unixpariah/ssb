@@ -36,7 +36,12 @@ mod tests {
     #[test]
     fn test_backlight_details() {
         match get_backlight_path() {
-            Ok(_) => assert!(backlight_details().is_ok()),
+            Ok(_) => {
+                assert!(backlight_details().is_ok());
+                let result = backlight_details().unwrap().parse::<f32>();
+                assert!(result.is_ok());
+                assert!(result.unwrap() <= 100.0);
+            }
             Err(_) => assert!(backlight_details().is_err()),
         }
     }

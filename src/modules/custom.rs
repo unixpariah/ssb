@@ -47,5 +47,6 @@ mod tests {
     #[test]
     fn test_new_command() {
         assert!(new_command("echo test").is_ok());
+        assert!(new_command("echo test").unwrap() == "test");
     }
 }

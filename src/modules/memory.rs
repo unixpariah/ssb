@@ -39,9 +39,24 @@ mod tests {
 
     #[test]
     fn test_memory_usage() {
-        assert!(memory_usage(&MemoryOpts::Used).is_ok());
-        assert!(memory_usage(&MemoryOpts::Free).is_ok());
-        assert!(memory_usage(&MemoryOpts::PercUsed).is_ok());
-        assert!(memory_usage(&MemoryOpts::PercFree).is_ok());
+        let result = memory_usage(&MemoryOpts::Used);
+        assert!(result.is_ok());
+        assert!(result.unwrap().parse::<f64>().is_ok());
+
+        let result = memory_usage(&MemoryOpts::Free);
+        assert!(result.is_ok());
+        assert!(result.unwrap().parse::<f64>().is_ok());
+
+        let result = memory_usage(&MemoryOpts::PercUsed);
+        assert!(result.is_ok());
+        let result = result.unwrap().parse::<f64>();
+        assert!(result.clone().is_ok());
+        assert!(result.unwrap() <= 100.0);
+
+        let result = memory_usage(&MemoryOpts::PercFree);
+        assert!(result.is_ok());
+        let result = result.unwrap().parse::<f64>();
+        assert!(result.clone().is_ok());
+        assert!(result.unwrap() <= 100.0);
     }
 }

@@ -37,7 +37,6 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
         }
     };
     let config_path = config_dir.join(format!("{}/config.toml", env!("CARGO_PKG_NAME")));
-
     if !config_path.exists() {
         info!(
             "Configuration file not found, generating new one at: {}",
@@ -148,7 +147,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_config() {
-        _ = get_config();
+    fn test_font_default() {
+        let font = Font::default();
+        assert_eq!(font.family, family());
+        assert_eq!(font.size, size());
+        assert_eq!(font.bold, bold());
+        assert_eq!(font.color, color());
+    }
+
+    #[test]
+    fn test_font() {
+        let font = Font {
+            family: "Fira Code".to_string(),
+            size: 14.0,
+            bold: false,
+            color: [0, 0, 0],
+        };
+        assert_eq!(font.family, "Fira Code");
+        assert_eq!(font.size, 14.0);
+        assert!(!font.bold);
+        assert_eq!(font.color, [0, 0, 0]);
+    }
+
+    #[test]
+    fn test_module() {
+        let module = Module {
+            command: Cmd::Workspaces(["".to_string(), "".to_string()]),
+            x: 0.0,
+            y: 0.0,
+        };
+        assert_eq!(
+            module.command,
+            Cmd::Workspaces(["".to_string(), "".to_string()])
+        );
+        assert_eq!(module.x, 0.0);
+        assert_eq!(module.y, 0.0);
     }
 }
