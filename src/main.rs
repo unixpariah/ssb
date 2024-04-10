@@ -29,7 +29,7 @@ use smithay_client_toolkit::{
 use std::{
     collections::HashMap,
     error::Error,
-    sync::{atomic::AtomicBool, mpsc},
+    sync::{atomic::AtomicBool, mpsc, Once},
 };
 use tokio::sync::broadcast;
 use util::{
@@ -108,7 +108,6 @@ struct StatusBar {
     dispatch_flag: bool,
     config: HotConfig,
     position_cache: PositionCache,
-    first_configure: bool,
 }
 
 struct HotConfig {
@@ -119,6 +118,7 @@ struct HotConfig {
 }
 
 static MESSAGE: &str = "If you see this, please contact lazy ass developer behind this project who did not care to update default config";
+static START: Once = Once::new();
 
 impl StatusBar {
     fn new(
@@ -223,15 +223,13 @@ impl StatusBar {
             dispatch_flag: true,
             config,
             position_cache: PositionCache::new(),
-            first_configure: true,
         }
     }
 
-    fn draw(&mut self, qh: &wayland_client::QueueHandle<Self>) -> Result<(), Box<dyn Error>> {
-        self.draw_receiver
-            .recv()
-            .expect("Failed to receive draw message");
-        println!("a");
+    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
+            return Ok(());
+        }
 
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
@@ -346,7 +344,10 @@ impl StatusBar {
             .reduce_with(|a, b| a || b)
             .unwrap_or(false);
 
-        if unchanged && !config_changed {}
+        if unchanged && !config_changed {
+            self.dispatch_flag = false;
+            return Ok(());
+        }
 
         self.image_cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
@@ -418,7 +419,6 @@ impl StatusBar {
             if surface.configured {
                 let layer = &surface.layer_surface;
                 layer.wl_surface().damage_buffer(0, 0, width, height);
-                layer.wl_surface().frame(qh, layer.wl_surface().clone());
                 layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
                 layer.wl_surface().commit();
             }
@@ -526,15 +526,11 @@ impl LayerShellHandler for StatusBar {
     fn configure(
         &mut self,
         _conn: &Connection,
-        qh: &QueueHandle<Self>,
+        _qh: &QueueHandle<Self>,
         _layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
         _configure: smithay_client_toolkit::shell::wlr_layer::LayerSurfaceConfigure,
         _serial: u32,
     ) {
-        if self.first_configure {
-            self.first_configure = false;
-            self.draw(qh).expect("Failed to draw");
-        }
     }
 
     fn closed(
@@ -568,11 +564,10 @@ impl CompositorHandler for StatusBar {
     fn frame(
         &mut self,
         _conn: &Connection,
-        qh: &QueueHandle<Self>,
+        _qh: &QueueHandle<Self>,
         _surface: &wayland_client::protocol::wl_surface::WlSurface,
         _time: u32,
     ) {
-        _ = self.draw(qh);
     }
 }
 
@@ -601,6 +596,7 @@ fn setup_listeners(
 
 #[tokio::main]
 async fn main() {
+    let start_time = std::time::Instant::now();
     logger();
 
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
@@ -633,9 +629,31 @@ async fn main() {
 
     setup_listeners(receivers, tx);
     loop {
-        event_queue
-            .blocking_dispatch(&mut status_bar)
-            .expect("Failed to dispatch events");
+        status_bar.draw().expect("Failed to draw");
+        let unconfigured = status_bar.surfaces.iter_mut().all(|surface| {
+            if !surface.configured {
+                surface.configured = true;
+                return true;
+            }
+            false
+        });
+
+        if status_bar.dispatch_flag {
+            event_queue
+                .blocking_dispatch(&mut status_bar)
+                .expect("Failed to dispatch events");
+        }
+
+        if !unconfigured {
+            START.call_once(|| {
+                info!("Startup time: {:?}", start_time.elapsed());
+            });
+
+            status_bar
+                .draw_receiver
+                .recv()
+                .expect("Failed to receive draw message");
+        }
     }
 }
 
