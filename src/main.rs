@@ -226,11 +226,7 @@ impl StatusBar {
         }
     }
 
-    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
-            return Ok(());
-        }
-
+    fn reload_config(&mut self) {
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
             self.config.css = get_css().unwrap_or_else(|_| {
@@ -245,13 +241,12 @@ impl StatusBar {
                 toml::from_str(TOML).expect(MESSAGE)
             });
             std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used anymore
-            self.surfaces.par_iter_mut().for_each(|surface| {
-                surface
-                    .layer_surface
-                    .set_anchor(match self.config.config.topbar {
-                        true => Anchor::TOP,
-                        false => Anchor::BOTTOM,
-                    });
+            let anchor = match self.config.config.topbar {
+                true => Anchor::TOP,
+                false => Anchor::BOTTOM,
+            };
+            self.surfaces.iter_mut().for_each(|surface| {
+                surface.layer_surface.set_anchor(anchor);
                 surface
                     .layer_surface
                     .set_size(surface.width as u32, self.config.config.height as u32);
@@ -262,10 +257,10 @@ impl StatusBar {
             config_changed = true;
         };
 
-        let unchanged = !self
+        self
             .module_info
             .par_iter_mut()
-            .map(|info| {
+            .for_each(|info| {
                 if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
                     let output = get_command_output(&info.command)
                         .unwrap_or(self.config.config.unkown.to_string());
@@ -308,17 +303,18 @@ impl StatusBar {
                         };
 
                         let css = &self.config.css;
-                        let css_section = css.find(name).map_or_else(|| {
-                            warn!("Style declaration for module {name} not found, using default style");
-                            let index = CSS.find(name).expect(MESSAGE);
-                            let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                            CSS[index..end_index].to_string()
-                        },
-                            |index| {
+                        let css_section = match css.find(name) {
+                            Some(index) => {
                                 let end_index = css[index..].find('}').map(|i| i + index).unwrap();
                                 css[index..end_index].to_string()
                             },
-                        );
+                            None => {
+                                warn!("Style declaration for module {name} not found, using default style");
+                                let index = CSS.find(name).expect(MESSAGE);
+                                let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                                CSS[index..end_index].to_string()
+                            }
+                        };
 
                         let css_section = format!("{} content: \"{}\"; }}", css_section, format);
                         let img = css_image::parse(css_section.clone()).unwrap_or_else(|_| {
@@ -336,40 +332,36 @@ impl StatusBar {
                         }
 
                         info.output = output;
-                        return true;
                     }
                 };
-                false
-            })
-            .reduce_with(|a, b| a || b)
-            .unwrap_or(false);
+            });
+    }
 
-        if unchanged && !config_changed {
-            self.dispatch_flag = false;
+    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
             return Ok(());
         }
+
+        self.reload_config();
 
         self.image_cache = HashMap::new();
         self.surfaces.iter_mut().try_for_each(|surface| {
             let width = surface.width;
             let height = self.config.config.height;
 
-            if config_changed {
-                let img_surface =
-                    ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
-                let context = Context::new(&img_surface).unwrap();
-                let background = self.config.config.background;
-                context.set_source_rgba(
-                    background[0] as f64 / 255.0,
-                    background[1] as f64 / 255.0,
-                    background[2] as f64 / 255.0,
-                    background[3] as f64 / 255.0,
-                );
-                _ = context.paint();
-                let mut background = Vec::new();
-                _ = img_surface.write_to_png(&mut background);
-                surface.background = image::load_from_memory(&background).unwrap();
-            }
+            let img_surface = ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
+            let context = Context::new(&img_surface).unwrap();
+            let background = self.config.config.background;
+            context.set_source_rgba(
+                background[0] as f64 / 255.0,
+                background[1] as f64 / 255.0,
+                background[2] as f64 / 255.0,
+                background[3] as f64 / 255.0,
+            );
+            _ = context.paint();
+            let mut background = Vec::new();
+            _ = img_surface.write_to_png(&mut background);
+            surface.background = image::load_from_memory(&background).unwrap();
 
             if self.image_cache.get(&width).is_none() {
                 let mut background = surface.background.clone();
@@ -416,12 +408,10 @@ impl StatusBar {
 
             canvas.copy_from_slice(img);
 
-            if surface.configured {
-                let layer = &surface.layer_surface;
-                layer.wl_surface().damage_buffer(0, 0, width, height);
-                layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-                layer.wl_surface().commit();
-            }
+            let layer = &surface.layer_surface;
+            layer.wl_surface().damage_buffer(0, 0, width, height);
+            layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
+            layer.wl_surface().commit();
 
             self.dispatch_flag = true;
             Ok::<(), Box<dyn Error>>(())
