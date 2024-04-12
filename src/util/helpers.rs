@@ -1,21 +1,6 @@
-use std::sync::atomic::AtomicBool;
+use image::{GenericImageView, ImageBuffer};
 
-use image::{DynamicImage, GenericImageView, ImageBuffer};
-
-pub fn update_position_cache<'a>(
-    position: &'a mut (DynamicImage, AtomicBool),
-    images: &[&DynamicImage],
-) -> &'a DynamicImage {
-    if position.1.load(std::sync::atomic::Ordering::Relaxed) {
-        position
-            .1
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-        position.0 = combine_images(images);
-    }
-    &position.0
-}
-
-fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
+pub fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
     let total_width = images.iter().map(|img| img.width()).sum();
     let max_height = images.iter().map(|img| img.height()).max().unwrap_or(0);
     let mut new_img = ImageBuffer::new(total_width, max_height);

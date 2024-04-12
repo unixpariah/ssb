@@ -1,11 +1,12 @@
 mod config;
 mod modules;
+mod surface;
 mod util;
 
 use crate::util::helpers::CSS;
 use cairo::{Context, ImageSurface};
 use config::{get_config, get_css, Config};
-use image::{imageops, ColorType, DynamicImage, RgbaImage};
+use image::{ColorType, DynamicImage};
 use log::{info, warn, LevelFilter};
 use modules::{
     backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
@@ -21,24 +22,24 @@ use smithay_client_toolkit::{
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
-        wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler, LayerSurface},
+        wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler},
         WaylandSurface,
     },
-    shm::{slot::SlotPool, Shm, ShmHandler},
+    shm::{Shm, ShmHandler},
 };
 use std::{
-    collections::HashMap,
     error::Error,
-    sync::{atomic::AtomicBool, mpsc, Once},
+    sync::{mpsc, Once},
 };
+use surface::Surface;
 use tokio::sync::broadcast;
 use util::{
-    helpers::{update_position_cache, TOML},
+    helpers::TOML,
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::{wl_output, wl_shm},
+    protocol::wl_output,
     Connection, QueueHandle,
 };
 
@@ -52,15 +53,6 @@ pub enum Cmd {
     Audio(String, Vec<String>),
     Cpu(u64, String),
     Battery(u64, String, Vec<String>),
-}
-
-#[derive(Debug)]
-struct Surface {
-    output_id: u32,
-    layer_surface: LayerSurface,
-    width: i32,
-    configured: bool,
-    background: DynamicImage,
 }
 
 pub struct ModuleData {
@@ -79,22 +71,6 @@ enum Position {
     Right,
 }
 
-struct PositionCache {
-    left: (DynamicImage, AtomicBool),
-    center: (DynamicImage, AtomicBool),
-    right: (DynamicImage, AtomicBool),
-}
-
-impl PositionCache {
-    fn new() -> Self {
-        Self {
-            left: (DynamicImage::new(0, 0, ColorType::L8), true.into()),
-            center: (DynamicImage::new(0, 0, ColorType::L8), true.into()),
-            right: (DynamicImage::new(0, 0, ColorType::L8), true.into()),
-        }
-    }
-}
-
 struct StatusBar {
     registry_state: RegistryState,
     output_state: OutputState,
@@ -104,10 +80,7 @@ struct StatusBar {
     compositor_state: CompositorState,
     module_info: Vec<ModuleData>,
     draw_receiver: mpsc::Receiver<()>,
-    image_cache: HashMap<i32, RgbaImage>,
-    dispatch_flag: bool,
     config: HotConfig,
-    position_cache: PositionCache,
 }
 
 struct HotConfig {
@@ -219,14 +192,11 @@ impl StatusBar {
             surfaces: Vec::new(),
             module_info,
             draw_receiver: rx,
-            image_cache: HashMap::new(),
-            dispatch_flag: true,
             config,
-            position_cache: PositionCache::new(),
         }
     }
 
-    fn reload_config(&mut self) {
+    fn reload_config(&mut self) -> bool {
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
             self.config.css = get_css().unwrap_or_else(|_| {
@@ -257,22 +227,15 @@ impl StatusBar {
             config_changed = true;
         };
 
-        self
+        !self
             .module_info
             .par_iter_mut()
-            .for_each(|info| {
+            .map(|info| {
                 if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
                     let output = get_command_output(&info.command)
                         .unwrap_or(self.config.config.unkown.to_string());
 
                     if output != info.output || config_changed {
-                        match info.position {
-                            Position::Left => self.position_cache.left.1.store(true, std::sync::atomic::Ordering::Relaxed),
-                            Position::Center =>
-                                self.position_cache.center.1.store(true, std::sync::atomic::Ordering::Relaxed),
-                            Position::Right => self.position_cache.right.1.store(true, std::sync::atomic::Ordering::Relaxed),
-                        };
-
                         let format = info.format.replace("%s", &output);
                         let format = match &info.command {
                             Cmd::Battery(_, _, icons)
@@ -332,90 +295,12 @@ impl StatusBar {
                         }
 
                         info.output = output;
+                        return true;
                     }
                 };
-            });
-    }
 
-    fn draw(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.surfaces.iter().any(|surface| !surface.configured) || self.surfaces.is_empty() {
-            return Ok(());
-        }
-
-        self.reload_config();
-
-        self.image_cache = HashMap::new();
-        self.surfaces.iter_mut().try_for_each(|surface| {
-            let width = surface.width;
-            let height = self.config.config.height;
-
-            let img_surface = ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
-            let context = Context::new(&img_surface).unwrap();
-            let background = self.config.config.background;
-            context.set_source_rgba(
-                background[0] as f64 / 255.0,
-                background[1] as f64 / 255.0,
-                background[2] as f64 / 255.0,
-                background[3] as f64 / 255.0,
-            );
-            _ = context.paint();
-            let mut background = Vec::new();
-            _ = img_surface.write_to_png(&mut background);
-            surface.background = image::load_from_memory(&background).unwrap();
-
-            if self.image_cache.get(&width).is_none() {
-                let mut background = surface.background.clone();
-                let (left_imgs, center_imgs, mut right_imgs) = self.module_info.iter().fold(
-                    (Vec::new(), Vec::new(), Vec::new()),
-                    |(mut left_imgs, mut center_imgs, mut right_imgs), info| {
-                        let img = &info.cache;
-                        match info.position {
-                            Position::Left => left_imgs.push(img),
-                            Position::Center => center_imgs.push(img),
-                            Position::Right => right_imgs.push(img),
-                        };
-                        (left_imgs, center_imgs, right_imgs)
-                    },
-                );
-                right_imgs.reverse();
-
-                let left = update_position_cache(&mut self.position_cache.left, &left_imgs);
-                let center = update_position_cache(&mut self.position_cache.center, &center_imgs);
-                let right = update_position_cache(&mut self.position_cache.right, &right_imgs);
-
-                imageops::overlay(&mut background, left, 0, 0);
-                imageops::overlay(
-                    &mut background,
-                    center,
-                    width as i64 / 2 - center.width() as i64 / 2,
-                    0,
-                );
-                imageops::overlay(
-                    &mut background,
-                    right,
-                    width as i64 - right.width() as i64,
-                    0,
-                );
-
-                self.image_cache.insert(width, background.to_rgba8());
-            }
-
-            // This will always be Some at this point
-            let img = self.image_cache.get(&width).unwrap();
-            let mut pool = SlotPool::new(width as usize * height as usize * 4, &self.shm)?;
-            let (buffer, canvas) =
-                pool.create_buffer(width, height, width * 4, wl_shm::Format::Abgr8888)?;
-
-            canvas.copy_from_slice(img);
-
-            let layer = &surface.layer_surface;
-            layer.wl_surface().damage_buffer(0, 0, width, height);
-            layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
-            layer.wl_surface().commit();
-
-            self.dispatch_flag = true;
-            Ok::<(), Box<dyn Error>>(())
-        })
+                false
+            }).reduce_with(|a, b| a || b).unwrap_or(false)
     }
 }
 
@@ -470,15 +355,14 @@ impl OutputHandler for StatusBar {
                 _ = img_surface.write_to_png(&mut background);
 
                 if let Ok(background) = image::load_from_memory(&background) {
-                    if let Some(name) = info.name {
+                    if let Some(ref name) = info.name {
                         info!("Bar configured for output: {:?}", name);
                     }
 
                     self.surfaces.push(Surface {
-                        output_id: info.id,
+                        output_info: info,
                         layer_surface: layer,
-                        width,
-                        configured: false,
+                        width: 0,
                         background,
                     });
                 }
@@ -506,7 +390,7 @@ impl OutputHandler for StatusBar {
                     "Removing bar from output: {:?}",
                     output_info.to_owned().name.unwrap()
                 );
-                info.output_id != output_info.id
+                info.output_info.id != output_info.id
             });
         }
     }
@@ -517,10 +401,15 @@ impl LayerShellHandler for StatusBar {
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
+        layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
         _configure: smithay_client_toolkit::shell::wlr_layer::LayerSurfaceConfigure,
         _serial: u32,
     ) {
+        self.surfaces
+            .iter_mut()
+            .find(|surface| &surface.layer_surface == layer)
+            .unwrap()
+            .change_size();
     }
 
     fn closed(
@@ -619,22 +508,27 @@ async fn main() {
 
     setup_listeners(receivers, tx);
     loop {
-        status_bar.draw().expect("Failed to draw");
-        let unconfigured = status_bar.surfaces.iter_mut().all(|surface| {
-            if !surface.configured {
-                surface.configured = true;
-                return true;
-            }
-            false
-        });
+        status_bar.reload_config();
+        let drawn = status_bar
+            .surfaces
+            .par_iter_mut()
+            .map(|surface| {
+                if surface.is_configured() {
+                    surface
+                        .draw(&status_bar.config, &status_bar.module_info, &qh, &globals)
+                        .unwrap();
+                    return true;
+                }
+                false
+            })
+            .reduce_with(|a, b| a || b)
+            .unwrap_or(false);
 
-        if status_bar.dispatch_flag {
-            event_queue
-                .blocking_dispatch(&mut status_bar)
-                .expect("Failed to dispatch events");
-        }
+        event_queue
+            .blocking_dispatch(&mut status_bar)
+            .expect("Failed to dispatch events");
 
-        if !unconfigured {
+        if drawn {
             START.call_once(|| {
                 info!("Startup time: {:?}", start_time.elapsed());
             });
