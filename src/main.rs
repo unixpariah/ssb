@@ -19,6 +19,7 @@ use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
     delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
     output::{OutputHandler, OutputState},
+    reexports::{calloop, calloop_wayland_source::WaylandSource},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     shell::{
@@ -43,7 +44,6 @@ use wayland_client::{
     Connection, QueueHandle,
 };
 
-// TODO: make these vecs of strings optional
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Cmd {
     Custom(String, String, Trigger, String),
@@ -81,6 +81,7 @@ struct StatusBar {
     module_info: Vec<ModuleData>,
     draw_receiver: mpsc::Receiver<()>,
     config: HotConfig,
+    first_run: bool,
 }
 
 struct HotConfig {
@@ -162,7 +163,7 @@ impl StatusBar {
 
                 Some(ModuleData {
                     output: String::new(),
-                    command: module.command.to_owned(),
+                    command: module.command.clone(),
                     format: format.to_string(),
                     receiver,
                     cache: DynamicImage::new(0, 0, ColorType::L8),
@@ -193,16 +194,19 @@ impl StatusBar {
             module_info,
             draw_receiver: rx,
             config,
+            first_run: true,
         }
     }
 
-    fn reload_config(&mut self) -> bool {
+    #[inline]
+    fn reload_config(&mut self) {
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
             self.config.css = get_css().unwrap_or_else(|_| {
                 warn!("CSS could not be parsed, using default styles");
                 toml::from_str(CSS).expect(MESSAGE)
             });
+
             config_changed = true;
         }
         if self.config.config_listener.try_recv().is_ok() {
@@ -210,12 +214,13 @@ impl StatusBar {
                 warn!("Config file could not be parsed, using default configuration");
                 toml::from_str(TOML).expect(MESSAGE)
             });
-            std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used anymore
+            std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used in here
             let anchor = match self.config.config.topbar {
                 true => Anchor::TOP,
                 false => Anchor::BOTTOM,
             };
             self.surfaces.iter_mut().for_each(|surface| {
+                surface.create_background(&self.config.config);
                 surface.layer_surface.set_anchor(anchor);
                 surface
                     .layer_surface
@@ -227,80 +232,67 @@ impl StatusBar {
             config_changed = true;
         };
 
-        !self
-            .module_info
-            .par_iter_mut()
-            .map(|info| {
-                if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
-                    let output = get_command_output(&info.command)
-                        .unwrap_or(self.config.config.unkown.to_string());
+        self.module_info.par_iter_mut().for_each(|info| {
+            if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
+                let output = get_command_output(&info.command)
+                    .unwrap_or(self.config.config.unkown.to_string());
 
-                    if output != info.output || config_changed {
-                        let format = info.format.replace("%s", &output);
-                        let format = match &info.command {
-                            Cmd::Battery(_, _, icons)
-                            | Cmd::Backlight(_, icons)
-                            | Cmd::Audio(_, icons)
-                                if !icons.is_empty() =>
-                            {
-                                if let Ok(output) = output.parse::<usize>() {
-                                    let range_size = 100 / icons.len();
-                                    let icon =
-                                        &icons[std::cmp::min(output / range_size, icons.len() - 1)];
-                                    format.replace("%c", icon)
-                                } else {
-                                    format.replace("%c", "")
-                                }
+                if output != info.output || config_changed {
+                    let format = info.format.replace("%s", &output);
+                    let format = match &info.command {
+                        Cmd::Battery(_, _, icons)
+                        | Cmd::Backlight(_, icons)
+                        | Cmd::Audio(_, icons)
+                            if !icons.is_empty() =>
+                        {
+                            if let Ok(output) = output.parse::<usize>() {
+                                let range_size = 100 / icons.len();
+                                let icon =
+                                    &icons[std::cmp::min(output / range_size, icons.len() - 1)];
+                                format.replace("%c", icon)
+                            } else {
+                                format.replace("%c", "")
                             }
-                            _ => format,
-                        };
-
-                        let name = match &info.command {
-                            Cmd::Workspaces(_) => "workspaces",
-                            Cmd::Memory(_, _, _) => "memory",
-                            Cmd::Cpu(_, _) => "cpu",
-                            Cmd::Battery(_, _, _) => "battery",
-                            Cmd::Backlight(_, _) => "backlight",
-                            Cmd::Audio(_, _) => "audio",
-                            Cmd::Custom(_, name, _, _) => name,
-                        };
-
-                        let css = &self.config.css;
-                        let css_section = match css.find(name) {
-                            Some(index) => {
-                                let end_index = css[index..].find('}').map(|i| i + index).unwrap();
-                                css[index..end_index].to_string()
-                            },
-                            None => {
-                                warn!("Style declaration for module {name} not found, using default style");
-                                let index = CSS.find(name).expect(MESSAGE);
-                                let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                                CSS[index..end_index].to_string()
-                            }
-                        };
-
-                        let css_section = format!("{} content: \"{}\"; }}", css_section, format);
-                        let img = css_image::parse(css_section.clone()).unwrap_or_else(|_| {
-                            warn!("Failed to parse {name} module css, using default style");
-                            let index = CSS.find(name).expect(MESSAGE);
-                            let end_index =
-                                CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                            let mut css = CSS[index..end_index].to_string();
-                            css.push_str(&format!(" content: \"{}\"; }}", format));
-                            css_image::parse(css).expect(MESSAGE)
-                        });
-
-                        if let Ok(img) = image::load_from_memory(img.get(name).unwrap()) {
-                            info.cache = img;
                         }
+                        _ => format,
+                    };
 
-                        info.output = output;
-                        return true;
+                    let name = match &info.command {
+                        Cmd::Workspaces(_) => "workspaces",
+                        Cmd::Memory(_, _, _) => "memory",
+                        Cmd::Cpu(_, _) => "cpu",
+                        Cmd::Battery(_, _, _) => "battery",
+                        Cmd::Backlight(_, _) => "backlight",
+                        Cmd::Audio(_, _) => "audio",
+                        Cmd::Custom(_, name, _, _) => name,
+                    };
+
+                    let css = &self.config.css;
+                    let index = css.find(name).unwrap_or_else(|| {
+                        warn!("Style declaration for module {name} not found, using default style");
+                        CSS.find(name).expect(MESSAGE)
+                    });
+                    let end_index = css[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                    let css_section = css[index..end_index].to_string();
+
+                    let css_section = format!("{} content: \"{}\"; }}", css_section, format);
+                    let img = css_image::parse(css_section).unwrap_or_else(|_| {
+                        warn!("Failed to parse {name} module css, using default style");
+                        let index = CSS.find(name).expect(MESSAGE);
+                        let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                        let mut css = CSS[index..end_index].to_string();
+                        css.push_str(&format!(" content: \"{}\"; }}", format));
+                        css_image::parse(css).expect(MESSAGE)
+                    });
+
+                    if let Ok(img) = image::load_from_memory(img.get(name).unwrap()) {
+                        info.cache = img;
                     }
-                };
 
-                false
-            }).reduce_with(|a, b| a || b).unwrap_or(false)
+                    info.output = output;
+                }
+            };
+        });
     }
 }
 
@@ -337,12 +329,16 @@ impl OutputHandler for StatusBar {
                 layer.set_size(width as u32, height as u32);
                 layer.commit();
 
+                if let Some(ref name) = info.name {
+                    info!("Bar configured for output: {:?}", name);
+                }
+
+                let height = config.height;
+
                 let img_surface =
                     ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
                 let context = Context::new(&img_surface).unwrap();
-
                 let background = config.background;
-
                 context.set_source_rgba(
                     background[0] as f64 / 255.0,
                     background[1] as f64 / 255.0,
@@ -350,22 +346,16 @@ impl OutputHandler for StatusBar {
                     background[3] as f64 / 255.0,
                 );
                 _ = context.paint();
-
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);
+                let background = image::load_from_memory(&background).unwrap();
 
-                if let Ok(background) = image::load_from_memory(&background) {
-                    if let Some(ref name) = info.name {
-                        info!("Bar configured for output: {:?}", name);
-                    }
-
-                    self.surfaces.push(Surface {
-                        output_info: info,
-                        layer_surface: layer,
-                        width: 0,
-                        background,
-                    });
-                }
+                self.surfaces.push(Surface {
+                    output_info: info,
+                    layer_surface: layer,
+                    width: 0,
+                    background,
+                });
             }
         }
     }
@@ -408,7 +398,7 @@ impl LayerShellHandler for StatusBar {
         self.surfaces
             .iter_mut()
             .find(|surface| &surface.layer_surface == layer)
-            .unwrap()
+            .unwrap() // Layer has to exist to be configured
             .change_size();
     }
 
@@ -459,14 +449,17 @@ impl ShmHandler for StatusBar {
 fn setup_listeners(
     listeners: Vec<(broadcast::Receiver<()>, broadcast::Sender<()>)>,
     sender: mpsc::Sender<()>,
+    ping: calloop::ping::Ping,
 ) {
     listeners.into_iter().for_each(|mut listener| {
+        let ping = ping.clone();
         let sender = sender.clone();
         tokio::spawn(async move {
             loop {
                 if listener.0.recv().await.is_ok() {
                     _ = sender.send(());
                     _ = listener.1.send(());
+                    ping.ping();
                 };
             }
         });
@@ -479,7 +472,7 @@ async fn main() {
     logger();
 
     let conn = Connection::connect_to_env().expect("Failed to connect to wayland server");
-    let (globals, mut event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
+    let (globals, event_queue) = registry_queue_init(&conn).expect("Failed to init globals");
     let qh = event_queue.handle();
     let (tx, rx) = mpsc::channel();
     let mut status_bar = StatusBar::new(&globals, &qh, rx);
@@ -506,38 +499,54 @@ async fn main() {
         ));
     }
 
-    setup_listeners(receivers, tx);
+    let mut event_loop =
+        calloop::EventLoop::<StatusBar>::try_new().expect("Failed to create event loop");
+    WaylandSource::new(conn, event_queue)
+        .insert(event_loop.handle())
+        .expect("Failed to insert wayland source");
+
+    let (ping, ping_source) =
+        calloop::ping::make_ping().expect("Unable to create a calloop::ping::Ping");
+    event_loop
+        .handle()
+        .insert_source(ping_source, |_, _, _| {})
+        .unwrap();
+
+    setup_listeners(receivers, tx, ping);
+
     loop {
-        status_bar.reload_config();
-        let drawn = status_bar
-            .surfaces
-            .par_iter_mut()
-            .map(|surface| {
-                if surface.is_configured() {
-                    surface
-                        .draw(&status_bar.config, &status_bar.module_info, &qh, &globals)
-                        .unwrap();
-                    return true;
-                }
-                false
-            })
-            .reduce_with(|a, b| a || b)
-            .unwrap_or(false);
+        if status_bar.draw_receiver.try_recv().is_ok() || status_bar.first_run {
+            status_bar.reload_config();
+            let drawn = status_bar
+                .surfaces
+                .par_iter_mut()
+                .map(|surface| {
+                    if surface.is_configured() {
+                        return surface
+                            .draw(
+                                &status_bar.config.config,
+                                &status_bar.module_info,
+                                &qh,
+                                &globals,
+                            )
+                            .is_ok();
+                    }
+                    false
+                })
+                .reduce_with(|a, b| a || b)
+                .unwrap_or(false);
 
-        event_queue
-            .blocking_dispatch(&mut status_bar)
-            .expect("Failed to dispatch events");
-
-        if drawn {
-            START.call_once(|| {
-                info!("Startup time: {:?}", start_time.elapsed());
-            });
-
-            status_bar
-                .draw_receiver
-                .recv()
-                .expect("Failed to receive draw message");
+            if drawn {
+                status_bar.first_run = false;
+                START.call_once(|| {
+                    info!("Startup time: {:#?}", start_time.elapsed());
+                });
+            }
         }
+
+        event_loop
+            .dispatch(None, &mut status_bar)
+            .expect("Failed to dispatch events");
     }
 }
 

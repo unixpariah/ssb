@@ -7,7 +7,7 @@ use smithay_client_toolkit::{
 };
 use wayland_client::{globals::GlobalList, protocol::wl_shm, QueueHandle};
 
-use crate::{util::helpers::combine_images, HotConfig, Position, StatusBar};
+use crate::{config::Config, util::helpers::combine_images, Position, StatusBar};
 
 #[derive(Debug)]
 pub struct Surface {
@@ -18,31 +18,17 @@ pub struct Surface {
 }
 
 impl Surface {
+    #[inline]
     pub fn draw(
         &mut self,
-        config: &HotConfig,
+        config: &Config,
         module_info: &[crate::ModuleData],
         qh: &QueueHandle<StatusBar>,
         globals: &GlobalList,
     ) -> Result<(), Box<dyn crate::Error>> {
         let width = self.width;
-        let height = config.config.height;
+        let height = config.height;
 
-        let img_surface = ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
-        let context = Context::new(&img_surface).unwrap();
-        let background = config.config.background;
-        context.set_source_rgba(
-            background[0] as f64 / 255.0,
-            background[1] as f64 / 255.0,
-            background[2] as f64 / 255.0,
-            background[3] as f64 / 255.0,
-        );
-        _ = context.paint();
-        let mut background = Vec::new();
-        _ = img_surface.write_to_png(&mut background);
-        self.background = image::load_from_memory(&background).unwrap();
-
-        let mut background = self.background.clone();
         let (left_imgs, center_imgs, mut right_imgs) = module_info.iter().fold(
             (Vec::new(), Vec::new(), Vec::new()),
             |(mut left_imgs, mut center_imgs, mut right_imgs), info| {
@@ -61,6 +47,7 @@ impl Surface {
         let center = combine_images(&center_imgs);
         let right = combine_images(&right_imgs);
 
+        let mut background = self.background.clone(); // Can't overwrite the background so we clone it
         imageops::overlay(&mut background, &left, 0, 0);
         imageops::overlay(
             &mut background,
@@ -84,10 +71,32 @@ impl Surface {
 
         let layer = &self.layer_surface;
         layer.wl_surface().damage_buffer(0, 0, width, height);
+        layer.wl_surface().frame(qh, layer.wl_surface().clone());
         layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
         layer.wl_surface().commit();
 
         Ok(())
+    }
+
+    pub fn create_background(&mut self, config: &Config) {
+        let width = self.width;
+        let height = config.height;
+
+        let img_surface = ImageSurface::create(cairo::Format::ARgb32, width, height).unwrap();
+        let context = Context::new(&img_surface).unwrap();
+        let background = config.background;
+        context.set_source_rgba(
+            background[0] as f64 / 255.0,
+            background[1] as f64 / 255.0,
+            background[2] as f64 / 255.0,
+            background[3] as f64 / 255.0,
+        );
+        _ = context.paint();
+        let mut background = Vec::new();
+        _ = img_surface.write_to_png(&mut background);
+        if let Ok(img) = image::load_from_memory(&background) {
+            self.background = img;
+        }
     }
 
     pub fn is_configured(&self) -> bool {

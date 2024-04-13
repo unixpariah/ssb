@@ -88,4 +88,3 @@ Styling with css is handled by [css-image](https://github.com/unixpariah/css-ima
 - Hot configuration modules
 - Pointer capabilities
 - Add Tray
-- Fix crashing when new output is added

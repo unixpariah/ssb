@@ -51,14 +51,14 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
     Ok(config)
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub struct PositionedModules {
     pub left: Vec<Module>,
     pub center: Vec<Module>,
     pub right: Vec<Module>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: String,
