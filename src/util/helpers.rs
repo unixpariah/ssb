@@ -165,6 +165,16 @@ workspaces {
     margin-top: 10px;
 }
 
+workspaces {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
+    font-weight: bold;
+    color: #ffffff;
+    margin-left: 35px;
+    margin-top: 10px;
+}
+
+
 date {
     font-family: "JetBrainsMono Nerd Font";
     font-size: 16px;

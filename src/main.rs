@@ -26,7 +26,7 @@ use smithay_client_toolkit::{
     reexports::{calloop, calloop_wayland_source::WaylandSource},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
-    seat::{pointer::PointerHandler, SeatHandler, SeatState},
+    seat::{pointer::PointerHandler, Capability, SeatHandler, SeatState},
     shell::{
         wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler},
         WaylandSurface,
@@ -45,7 +45,7 @@ use util::{
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::wl_output,
+    protocol::{wl_output, wl_pointer::WlPointer},
     Connection, QueueHandle,
 };
 
@@ -77,6 +77,7 @@ struct StatusBar {
     config: HotConfig,
     first_run: bool,
     seat_state: SeatState,
+    pointer: Option<WlPointer>,
 }
 
 struct HotConfig {
@@ -203,6 +204,7 @@ impl StatusBar {
             config,
             first_run: true,
             seat_state: SeatState::new(globals, qh),
+            pointer: None,
         }
     }
 
@@ -280,9 +282,9 @@ impl StatusBar {
                         warn!("Style declaration for module {name} not found, using default style");
                         CSS.find(name).expect(MESSAGE)
                     });
-                    let end_index = css[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                    let css_section = css[index..end_index].to_string();
 
+                    let end_index = css[index..].find('}').map(|i| i + index).unwrap_or(index);
+                    let css_section = css[index..end_index].to_string();
                     let css_section = format!("{} content: \"{}\"; }}", css_section, format);
                     let img = css_image::parse(css_section).unwrap_or_else(|_| {
                         warn!("Failed to parse {name} module css, using default style");
@@ -293,9 +295,22 @@ impl StatusBar {
                         css_image::parse(css).expect(MESSAGE)
                     });
 
-                    if let Ok(img) = image::load_from_memory(img.get(name).unwrap()) {
-                        info.cache = img;
-                    }
+                    info.cache = img
+                        .get(name)
+                        .map_or_else(
+                            || {
+                                warn!("Failed to parse {name} module css, using default style");
+                                let index = CSS.find(name).expect(MESSAGE);
+                                let end_index =
+                                    CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                                let mut css = CSS[index..end_index].to_string();
+                                css.push_str(&format!(" content: \"{}\"; }}", format));
+                                let css = css_image::parse(css).expect(MESSAGE);
+                                image::load_from_memory(css.get(name).expect(MESSAGE))
+                            },
+                            |img| image::load_from_memory(img),
+                        )
+                        .unwrap();
 
                     info.output = output;
                 }
@@ -400,8 +415,12 @@ impl PointerHandler for StatusBar {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
         _pointer: &wayland_client::protocol::wl_pointer::WlPointer,
-        _events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
+        events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
     ) {
+        events.iter().for_each(|event| {
+            let pos = event.position;
+            println!("Pointer position: {:?}", pos);
+        });
     }
 }
 
@@ -460,6 +479,34 @@ impl CompositorHandler for StatusBar {
 }
 
 impl SeatHandler for StatusBar {
+    fn seat_state(&mut self) -> &mut smithay_client_toolkit::seat::SeatState {
+        &mut self.seat_state
+    }
+
+    fn new_capability(
+        &mut self,
+        _conn: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: wayland_client::protocol::wl_seat::WlSeat,
+        capability: smithay_client_toolkit::seat::Capability,
+    ) {
+        if capability == Capability::Pointer {
+            self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
+        }
+    }
+
+    fn remove_capability(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+        capability: smithay_client_toolkit::seat::Capability,
+    ) {
+        if capability == Capability::Pointer {
+            self.pointer = None;
+        }
+    }
+
     fn new_seat(
         &mut self,
         _conn: &Connection,
@@ -468,33 +515,11 @@ impl SeatHandler for StatusBar {
     ) {
     }
 
-    fn seat_state(&mut self) -> &mut smithay_client_toolkit::seat::SeatState {
-        &mut self.seat_state
-    }
-
     fn remove_seat(
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
         _seat: wayland_client::protocol::wl_seat::WlSeat,
-    ) {
-    }
-
-    fn new_capability(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wayland_client::protocol::wl_seat::WlSeat,
-        _capability: smithay_client_toolkit::seat::Capability,
-    ) {
-    }
-
-    fn remove_capability(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wayland_client::protocol::wl_seat::WlSeat,
-        _capability: smithay_client_toolkit::seat::Capability,
     ) {
     }
 }

@@ -144,6 +144,8 @@ impl Default for Font {
 
 #[cfg(test)]
 mod tests {
+    use crate::modules::workspaces::WorkspacesIcons;
+
     use super::*;
 
     #[test]
@@ -172,13 +174,19 @@ mod tests {
     #[test]
     fn test_module() {
         let module = Module {
-            command: Cmd::Workspaces(["".to_string(), "".to_string()]),
+            command: Cmd::Workspaces(WorkspacesIcons {
+                active: "".to_string(),
+                inactive: "".to_string(),
+            }),
             x: 0.0,
             y: 0.0,
         };
         assert_eq!(
             module.command,
-            Cmd::Workspaces(["".to_string(), "".to_string()])
+            Cmd::Workspaces(WorkspacesIcons {
+                active: "".to_string(),
+                inactive: "".to_string(),
+            }),
         );
         assert_eq!(module.x, 0.0);
         assert_eq!(module.y, 0.0);

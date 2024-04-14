@@ -2,15 +2,28 @@
 
 Ssb is a simple status bar for wayland written in rust.
 
-## Available modules
+## Features
 
-- Workspaces (Avaliable only for Hyprland atm)
-- Battery
-- Backlight
-- Pulseaudio
-- Memory
-- CPU average Load
-- Custom scripts
+- [x] Customizable with css
+- [x] Hot reload styling
+- [ ] Per output configuration
+- [ ] Mouse support
+- [ ] Hot reload modules
+
+## Modules
+
+- [x] Workspaces (Avaliable only for Hyprland atm)
+- [x] Battery
+- [x] Backlight
+- [x] Pulseaudio
+- [x] Memory
+- [x] CPU average Load
+- [x] Custom scripts
+- [ ] Current window title
+- [ ] Network
+- [ ] Persistant workspaces
+- [ ] Bluetooth
+- [ ] Tray
 
 ## Dependencies
 
@@ -28,7 +41,7 @@ Include this in your configuration.nix
 ```nix
     (let
       pkg = import (fetchTarball {
-        url = "https://github.com/unixpariah/ssb/archive/master.tar.gz";
+        url = "https://github.com/unixpariah/ssb/archive/main.tar.gz";
       }) {};
     in
       pkg.overrideAttrs (oldAttrs: {
@@ -82,9 +95,3 @@ cargo build --release
 The configuration files will be generated at XDG_HOME_CONFIG/ssb/* on first run.
 
 Styling with css is handled by [css-image](https://github.com/unixpariah/css-image) and is currently very limited.
-
-## TODO
-- Add sway support (and other compositors as well)
-- Hot configuration modules
-- Pointer capabilities
-- Add Tray
