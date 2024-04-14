@@ -191,4 +191,13 @@ network {
     margin-right: 25px;
     margin-top: 10px;
 }
+
+title {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 16px;
+    font-weight: bold;
+    color: #ffffff;
+    margin-right: 25px;
+    margin-top: 10px;
+}
 "#;

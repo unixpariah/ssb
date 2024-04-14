@@ -1,5 +1,6 @@
 use hyprland::shared::HyprData;
 use hyprland::shared::HyprDataActive;
+use hyprland::shared::HyprDataActiveOptional;
 use log::warn;
 use serde::Deserialize;
 use serde::Serialize;
@@ -11,7 +12,11 @@ pub struct WorkspacesIcons {
     pub inactive: String,
 }
 
-pub fn workspaces(workspace: &WorkspacesIcons) -> Result<String, Box<dyn Error>> {
+pub fn get_window_title() -> Option<String> {
+    Some(hyprland::data::Client::get_active().ok()??.title)
+}
+
+pub fn workspaces(workspace: &WorkspacesIcons) -> String {
     let mut active_workspace = None;
     let mut length = None;
 
@@ -22,13 +27,13 @@ pub fn workspaces(workspace: &WorkspacesIcons) -> Result<String, Box<dyn Error>>
 
     if active_workspace.is_none() || length.is_none() {
         warn!("Unsupported compositor, workspace module disabled");
-        return Ok("".to_string());
+        return "".to_string();
     }
 
     let active_workspace = active_workspace.unwrap();
     let length = length.unwrap();
 
-    Ok((0..length).fold(String::new(), |mut workspace_state, i| {
+    (0..length).fold(String::new(), |mut workspace_state, i| {
         let workspace = if i == active_workspace - 1 || i == length - 1 && active_workspace > length
         {
             &workspace.active
@@ -39,7 +44,7 @@ pub fn workspaces(workspace: &WorkspacesIcons) -> Result<String, Box<dyn Error>>
         workspace_state.push(' ');
 
         workspace_state
-    }))
+    })
 }
 
 fn hyprland() -> Result<(usize, usize), Box<dyn Error>> {

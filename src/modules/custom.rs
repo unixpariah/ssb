@@ -7,7 +7,7 @@ use super::{
     battery::{battery_details, BatterySettings},
     cpu::{usage, CpuSettings},
     memory::{memory_usage, MemorySettings},
-    workspaces::{workspaces, WorkspacesIcons},
+    workspaces::{get_window_title, workspaces, WorkspacesIcons},
 };
 use crate::util::listeners::Trigger;
 use std::{error::Error, process::Command};
@@ -21,6 +21,7 @@ pub enum Cmd {
     Audio(AudioSettings),
     Cpu(CpuSettings),
     Battery(BatterySettings),
+    WindowTitle,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -55,12 +56,13 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
                 Err(e)?
             }
         },
-        Cmd::Workspaces(icons) => workspaces(icons)?,
+        Cmd::Workspaces(icons) => workspaces(icons),
         Cmd::Memory(settings) => memory_usage(&settings.memory_opts)?,
         Cmd::Backlight(_) => backlight_details()?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_) => usage()?.split('.').next().ok_or("")?.into(),
         Cmd::Battery(_) => battery_details()?,
         Cmd::Audio(_) => audio()?,
+        Cmd::WindowTitle => get_window_title().unwrap_or_default(),
     })
 }
 

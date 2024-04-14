@@ -34,6 +34,7 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler},
 };
 use std::{
+    collections::HashMap,
     error::Error,
     sync::{mpsc, Once},
 };
@@ -122,6 +123,7 @@ impl StatusBar {
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
                     Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
+                    Cmd::WindowTitle => (listeners.new_workspace_listener(), "%s"),
                     Cmd::Memory(MemorySettings {
                         interval,
                         formatting,
@@ -274,20 +276,11 @@ impl StatusBar {
                         Cmd::Battery(_) => "battery",
                         Cmd::Backlight(_) => "backlight",
                         Cmd::Audio(_) => "audio",
+                        Cmd::WindowTitle => "title",
                         Cmd::Custom(custom) => &custom.name,
                     };
 
-                    let css = &self.config.css;
-                    let index = css.find(name).unwrap_or_else(|| {
-                        warn!("Style declaration for module {name} not found, using default style");
-                        CSS.find(name).expect(MESSAGE)
-                    });
-
-                    let end_index = css[index..].find('}').map(|i| i + index).unwrap_or(index);
-                    let css_section = css[index..end_index].to_string();
-                    let css_section = format!("{} content: \"{}\"; }}", css_section, format);
-                    let img = css_image::parse(css_section).unwrap_or_else(|_| {
-                        warn!("Failed to parse {name} module css, using default style");
+                    let img = get_style(&self.config.css, name, &format).unwrap_or_else(|_| {
                         let index = CSS.find(name).expect(MESSAGE);
                         let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
                         let mut css = CSS[index..end_index].to_string();
@@ -317,6 +310,27 @@ impl StatusBar {
             };
         });
     }
+}
+
+fn get_style(
+    css: &str,
+    name: &str,
+    format: &str,
+) -> Result<HashMap<String, Vec<u8>>, Box<dyn Error + Sync + Send>> {
+    let Some(index) = css.find(name) else {
+        warn!("Style declaration for module {name} not found, using default style");
+        return Err("".into());
+    };
+
+    let end_index = css[index..].find('}').map(|i| i + index).ok_or("")?;
+    let css_section = css[index..end_index].to_string();
+    let css_section = format!("{} content: \"{}\"; }}", css_section, format);
+    let Ok(img) = css_image::parse(css_section) else {
+        warn!("Failed to parse {name} module css, using default style");
+        return Err("".into());
+    };
+
+    Ok(img)
 }
 
 impl OutputHandler for StatusBar {

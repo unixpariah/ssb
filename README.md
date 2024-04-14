@@ -19,7 +19,7 @@ Ssb is a simple status bar for wayland written in rust.
 - [x] Memory
 - [x] CPU average Load
 - [x] Custom scripts
-- [ ] Current window title
+- [x] Current window title
 - [ ] Network
 - [ ] Persistant workspaces
 - [ ] Bluetooth
