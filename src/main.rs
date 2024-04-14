@@ -17,11 +17,13 @@ use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
+    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
     reexports::{calloop, calloop_wayland_source::WaylandSource},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
+    seat::{pointer::PointerHandler, SeatHandler, SeatState},
     shell::{
         wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler},
         WaylandSurface,
@@ -82,6 +84,7 @@ struct StatusBar {
     draw_receiver: mpsc::Receiver<()>,
     config: HotConfig,
     first_run: bool,
+    seat_state: SeatState,
 }
 
 struct HotConfig {
@@ -195,6 +198,7 @@ impl StatusBar {
             draw_receiver: rx,
             config,
             first_run: true,
+            seat_state: SeatState::new(globals, qh),
         }
     }
 
@@ -219,7 +223,7 @@ impl StatusBar {
                 true => Anchor::TOP,
                 false => Anchor::BOTTOM,
             };
-            self.surfaces.iter_mut().for_each(|surface| {
+            self.surfaces.par_iter_mut().for_each(|surface| {
                 surface.create_background(&self.config.config);
                 surface.layer_surface.set_anchor(anchor);
                 surface
@@ -386,6 +390,17 @@ impl OutputHandler for StatusBar {
     }
 }
 
+impl PointerHandler for StatusBar {
+    fn pointer_frame(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _pointer: &wayland_client::protocol::wl_pointer::WlPointer,
+        _events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
+    ) {
+    }
+}
+
 impl LayerShellHandler for StatusBar {
     fn configure(
         &mut self,
@@ -436,6 +451,46 @@ impl CompositorHandler for StatusBar {
         _qh: &QueueHandle<Self>,
         _surface: &wayland_client::protocol::wl_surface::WlSurface,
         _time: u32,
+    ) {
+    }
+}
+
+impl SeatHandler for StatusBar {
+    fn new_seat(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+    ) {
+    }
+
+    fn seat_state(&mut self) -> &mut smithay_client_toolkit::seat::SeatState {
+        &mut self.seat_state
+    }
+
+    fn remove_seat(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+    ) {
+    }
+
+    fn new_capability(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+        _capability: smithay_client_toolkit::seat::Capability,
+    ) {
+    }
+
+    fn remove_capability(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+        _capability: smithay_client_toolkit::seat::Capability,
     ) {
     }
 }
@@ -510,10 +565,9 @@ async fn main() {
     event_loop
         .handle()
         .insert_source(ping_source, |_, _, _| {})
-        .unwrap();
+        .expect("Failed to insert source");
 
     setup_listeners(receivers, tx, ping);
-
     loop {
         if status_bar.draw_receiver.try_recv().is_ok() || status_bar.first_run {
             status_bar.reload_config();
@@ -555,6 +609,8 @@ delegate_output!(StatusBar);
 delegate_layer!(StatusBar);
 delegate_compositor!(StatusBar);
 delegate_shm!(StatusBar);
+delegate_pointer!(StatusBar);
+delegate_seat!(StatusBar);
 
 impl ProvidesRegistryState for StatusBar {
     fn registry(&mut self) -> &mut RegistryState {

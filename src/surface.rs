@@ -62,7 +62,7 @@ impl Surface {
             0,
         );
 
-        let shm = Shm::bind(globals, qh).unwrap();
+        let shm = Shm::bind(globals, qh).expect("Couldn't bind to shm");
         let mut pool = SlotPool::new(width as usize * height as usize * 4, &shm)?;
         let (buffer, canvas) =
             pool.create_buffer(width, height, width * 4, wl_shm::Format::Abgr8888)?;
@@ -71,7 +71,6 @@ impl Surface {
 
         let layer = &self.layer_surface;
         layer.wl_surface().damage_buffer(0, 0, width, height);
-        layer.wl_surface().frame(qh, layer.wl_surface().clone());
         layer.wl_surface().attach(Some(buffer.wl_buffer()), 0, 0);
         layer.wl_surface().commit();
 
