@@ -1,11 +1,35 @@
 use log::warn;
+use serde::{Deserialize, Serialize};
 
 use super::{
-    audio::audio, backlight::backlight_details, battery::battery_details, cpu::usage,
-    memory::memory_usage, workspaces::workspaces,
+    audio::{audio, AudioSettings},
+    backlight::{backlight_details, BacklightSettings},
+    battery::{battery_details, BatterySettings},
+    cpu::{usage, CpuSettings},
+    memory::{memory_usage, MemorySettings},
+    workspaces::{workspaces, WorkspacesIcons},
 };
-use crate::Cmd;
+use crate::util::listeners::Trigger;
 use std::{error::Error, process::Command};
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub enum Cmd {
+    Custom(CustomSettings),
+    Workspaces(WorkspacesIcons),
+    Backlight(BacklightSettings),
+    Memory(MemorySettings),
+    Audio(AudioSettings),
+    Cpu(CpuSettings),
+    Battery(BatterySettings),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct CustomSettings {
+    pub command: String,
+    pub name: String,
+    pub event: Trigger,
+    pub formatting: String,
+}
 
 pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
     let mut command_vec = command.split_whitespace().collect::<Vec<_>>();
@@ -24,19 +48,19 @@ pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
 
 pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
     Ok(match command {
-        Cmd::Custom(command, _, _, _) => match new_command(command) {
+        Cmd::Custom(settings) => match new_command(&settings.command) {
             Ok(output) => output,
             Err(e) => {
-                warn!("Command '{command}' failed, using default value");
+                warn!("Command '{}' failed, using default value", settings.command);
                 Err(e)?
             }
         },
-        Cmd::Workspaces(workspace) => workspaces(workspace)?,
-        Cmd::Memory(opt, _, _) => memory_usage(opt)?,
-        Cmd::Backlight(_, _) => backlight_details()?.split('.').next().ok_or("")?.into(),
-        Cmd::Cpu(_, _) => usage()?.split('.').next().ok_or("")?.into(),
-        Cmd::Battery(_, _, _) => battery_details()?,
-        Cmd::Audio(_, _) => audio()?,
+        Cmd::Workspaces(icons) => workspaces(icons)?,
+        Cmd::Memory(settings) => memory_usage(&settings.memory_opts)?,
+        Cmd::Backlight(_) => backlight_details()?.split('.').next().ok_or("")?.into(),
+        Cmd::Cpu(_) => usage()?.split('.').next().ok_or("")?.into(),
+        Cmd::Battery(_) => battery_details()?,
+        Cmd::Audio(_) => audio()?,
     })
 }
 

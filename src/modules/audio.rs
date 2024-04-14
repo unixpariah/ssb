@@ -1,4 +1,12 @@
 use pulsectl::controllers::{DeviceControl, SinkController};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct AudioSettings {
+    pub formatting: String,
+    #[serde(default)]
+    pub icons: Vec<String>,
+}
 
 pub fn audio() -> Result<String, Box<dyn crate::Error>> {
     let mut handler = SinkController::create()?;

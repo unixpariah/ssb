@@ -1,6 +1,13 @@
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-use serde::{Deserialize, Serialize};
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BatterySettings {
+    pub formatting: String,
+    #[serde(default)]
+    pub icons: Vec<String>,
+    pub interval: u64,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum BatteryOpts {

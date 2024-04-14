@@ -1,6 +1,12 @@
+use serde::{Deserialize, Serialize};
+use std::error::Error;
 use sysinfo::System;
 
-use std::error::Error;
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct CpuSettings {
+    pub formatting: String,
+    pub interval: u64,
+}
 
 pub fn usage() -> Result<String, Box<dyn Error>> {
     let mut system = System::new();

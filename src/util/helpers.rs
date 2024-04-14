@@ -40,7 +40,7 @@ height = 40 # Height of the bar
 # - Hyprland
 
 [[modules.left]]
-command.Workspaces = [" ", " "]
+command.Workspaces = { active = " ", inactive = " " }
 
 # Custom Module
 
@@ -62,10 +62,10 @@ command.Workspaces = [" ", " "]
 # This event is triggered when the volume changes. It doesn't take any arguments.
 
 [[modules.center]]
-command.Custom = ["date +%H:%M", "date", { TimePassed = 60000 }, " %s"]
+command.Custom = { command = "date +%H:%M", name = "date", event = { TimePassed = 60000 }, formatting = " %s" }
 
 [[modules.right]]
-command.Custom = ["iwgetid -r", "network", { TimePassed = 10000 }, "  %s"]
+command.Custom = { command = "iwgetid -r", name = "network", event = { TimePassed = 10000 }, formatting = "  %s" }
 
 # CPU Module
 
@@ -73,7 +73,7 @@ command.Custom = ["iwgetid -r", "network", { TimePassed = 10000 }, "  %s"]
 # and the formatting for the display (with "%s" as a placeholder for the value).
 
 [[modules.right]]
-command.Cpu = [5000, "󰍛 %s%"]
+command.Cpu = { interval = 5000, formatting = "󰍛 %s%" }
 
 # Memory Module
 
@@ -82,15 +82,15 @@ command.Cpu = [5000, "󰍛 %s%"]
 # the update time in milliseconds, and the formatting for the display (with "%s" as a placeholder for the value).
 
 [[modules.right]]
-command.Memory = ["PercUsed", 5000, "󰍛 %s%"]
+command.Memory = { memory_opts = "PercUsed", interval = 5000, formatting = "󰍛 %s%" }
 
 # Audio Module
 
-# This module is designed to control and display the audio level. It takes two arguments:
+# This module is designed to display the audio level. It takes two arguments:
 # the display format (where "%s" is a placeholder for the value and "%c" stands for icons), and an array of icons.
 
 [[modules.right]]
-command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
+command.Audio = { formatting = "%c %s%", icons = ["", "", "󰕾", ""] }
 
 # Backlight Module
 
@@ -98,7 +98,7 @@ command.Audio = ["%c %s%", ["", "", "󰕾", ""]]
 # the display format (where "%s" is a placeholder for the value and "%c" is a placeholder for icons), and an array of icons.
 
 [[modules.right]]
-command.Backlight = ["%c %s%", ["", "", "", "", "", "", "", "", ""]]
+command.Backlight = { formatting = "%c %s%", icons = ["", "", "", "", "", "", "", "", ""] }
 
 # Battery Module
 
@@ -107,7 +107,7 @@ command.Backlight = ["%c %s%", ["", "", "", "", "", "", "",
 # for the value and %c as a placeholder for icons), and an array of icons.
 
 [[modules.right]]
-command.Battery = [5000, "%c %s%", ["󰁺" ,"󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]]
+command.Battery = { interval = 5000, formatting = "%c %s%", icons = ["󰁺" ,"󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"] }
 "#;
 
 pub const CSS: &str = r#"

@@ -9,11 +9,14 @@ use config::{get_config, get_css, Config};
 use image::{ColorType, DynamicImage};
 use log::{info, warn, LevelFilter};
 use modules::{
-    backlight::get_backlight_path, battery::battery_details, custom::get_command_output,
-    memory::MemoryOpts,
+    audio::AudioSettings,
+    backlight::{get_backlight_path, BacklightSettings},
+    battery::{battery_details, BatterySettings},
+    cpu::CpuSettings,
+    custom::{get_command_output, Cmd},
+    memory::MemorySettings,
 };
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -45,17 +48,6 @@ use wayland_client::{
     protocol::wl_output,
     Connection, QueueHandle,
 };
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum Cmd {
-    Custom(String, String, Trigger, String),
-    Workspaces([String; 2]),
-    Backlight(String, Vec<String>),
-    Memory(MemoryOpts, u64, String),
-    Audio(String, Vec<String>),
-    Cpu(u64, String),
-    Battery(u64, String, Vec<String>),
-}
 
 pub struct ModuleData {
     output: String,
@@ -129,38 +121,50 @@ impl StatusBar {
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
                     Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                    Cmd::Memory(_, interval, format)
-                    | Cmd::Cpu(interval, format)
-                    | Cmd::Battery(interval, format, _) => {
-                        if let Cmd::Battery(_, _, _) = &module.command {
+                    Cmd::Memory(MemorySettings {
+                        interval,
+                        formatting,
+                        ..
+                    })
+                    | Cmd::Cpu(CpuSettings {
+                        interval,
+                        formatting,
+                    })
+                    | Cmd::Battery(BatterySettings {
+                        interval,
+                        formatting,
+                        ..
+                    }) => {
+                        if let Cmd::Battery(_) = &module.command {
                             if battery_details().is_err() {
                                 warn!("Battery not found, deactivating module");
                                 return None;
                             }
                         }
-                        (listeners.new_time_listener(*interval), format.as_str())
+                        (listeners.new_time_listener(*interval), formatting.as_str())
                     }
-                    Cmd::Backlight(format, _) => match get_backlight_path() {
+                    Cmd::Backlight(settings) => match get_backlight_path() {
                         Ok(path) => (
                             listeners.new_file_listener(&path.join("brightness")),
-                            format.as_str(),
+                            settings.formatting.as_str(),
                         ),
                         Err(_) => {
                             warn!("Backlight not found, deactivating module");
                             return None;
                         }
                     },
-                    Cmd::Audio(format, _) => {
-                        (listeners.new_volume_change_listener(), format.as_str())
-                    }
-                    Cmd::Custom(_, _, trigger, format) => {
-                        let trigger = match trigger {
+                    Cmd::Audio(settings) => (
+                        listeners.new_volume_change_listener(),
+                        settings.formatting.as_str(),
+                    ),
+                    Cmd::Custom(settings) => {
+                        let trigger = match &settings.event {
                             Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                             Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
                             Trigger::FileChange(path) => listeners.new_file_listener(path),
                             Trigger::VolumeChanged => listeners.new_volume_change_listener(),
                         };
-                        (trigger, format.as_str())
+                        (trigger, settings.formatting.as_str())
                     }
                 };
 
@@ -244,9 +248,9 @@ impl StatusBar {
                 if output != info.output || config_changed {
                     let format = info.format.replace("%s", &output);
                     let format = match &info.command {
-                        Cmd::Battery(_, _, icons)
-                        | Cmd::Backlight(_, icons)
-                        | Cmd::Audio(_, icons)
+                        Cmd::Battery(BatterySettings { icons, .. })
+                        | Cmd::Backlight(BacklightSettings { icons, .. })
+                        | Cmd::Audio(AudioSettings { icons, .. })
                             if !icons.is_empty() =>
                         {
                             if let Ok(output) = output.parse::<usize>() {
@@ -258,17 +262,17 @@ impl StatusBar {
                                 format.replace("%c", "")
                             }
                         }
-                        _ => format,
+                        _ => format.replace("%c", ""),
                     };
 
                     let name = match &info.command {
                         Cmd::Workspaces(_) => "workspaces",
-                        Cmd::Memory(_, _, _) => "memory",
-                        Cmd::Cpu(_, _) => "cpu",
-                        Cmd::Battery(_, _, _) => "battery",
-                        Cmd::Backlight(_, _) => "backlight",
-                        Cmd::Audio(_, _) => "audio",
-                        Cmd::Custom(_, name, _, _) => name,
+                        Cmd::Memory(_) => "memory",
+                        Cmd::Cpu(_) => "cpu",
+                        Cmd::Battery(_) => "battery",
+                        Cmd::Backlight(_) => "backlight",
+                        Cmd::Audio(_) => "audio",
+                        Cmd::Custom(custom) => &custom.name,
                     };
 
                     let css = &self.config.css;

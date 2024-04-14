@@ -1,4 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::error::Error;
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct BacklightSettings {
+    pub formatting: String,
+    #[serde(default)]
+    pub icons: Vec<String>,
+}
 
 pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>> {
     let mut dirs = std::fs::read_dir("/sys/class/backlight")?;

@@ -3,6 +3,13 @@ use sysinfo::System;
 
 use std::error::Error;
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+pub struct MemorySettings {
+    pub memory_opts: MemoryOpts,
+    pub interval: u64,
+    pub formatting: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum MemoryOpts {
     Used,
