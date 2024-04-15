@@ -111,93 +111,40 @@ command.Battery = { interval = 5000, formatting = "%c %s%", icons = ["Û∞Å∫" ,"Û∞
 "#;
 
 pub const CSS: &str = r#"
-backlight {
+* {
     font-family: "JetBrainsMono Nerd Font";
     font-size: 16px;
     font-weight: bold;
     color: #ffffff;
-    margin-right: 10px;
-    margin-left: 25px;
     margin-top: 10px;
 }
 
-battery {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
-    margin-top: 10px;
+backlight {
+    margin-left: 25px;
+    margin-right: 10px;
 }
 
 audio {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
     margin-right: 25px;
-    margin-top: 10px;
 }
 
 cpu {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
     margin-right: 25px;
-    margin-top: 10px;
 }
 
 memory {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
     margin-right: 10px;
-    margin-top: 10px;
 }
 
 workspaces {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
     margin-left: 35px;
-    margin-top: 10px;
-}
-
-workspaces {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
-    margin-left: 35px;
-    margin-top: 10px;
-}
-
-
-date {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
-    margin-top: 10px;
 }
 
 network {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
     margin-right: 25px;
-    margin-top: 10px;
 }
 
 title {
-    font-family: "JetBrainsMono Nerd Font";
-    font-size: 16px;
-    font-weight: bold;
-    color: #ffffff;
     margin-right: 25px;
-    margin-top: 10px;
 }
 "#;

@@ -1,13 +1,12 @@
 # ssb - Simple status bar
 
-Ssb is a simple status bar for wayland written in rust.
+Ssb is a simple status bar for wlroots based compositors.
 
 ## Features
 
 - [x] Customizable with css
 - [x] Hot reload styling
 - [ ] Per output configuration
-- [ ] Mouse support
 - [ ] Hot reload modules
 
 ## Modules
@@ -25,9 +24,8 @@ Ssb is a simple status bar for wayland written in rust.
 - [ ] Bluetooth
 - [ ] Tray
 
-## Dependencies
+## Build time dependencies
 
-- Compositor implementing the wlr-layer-shell protocol (Hyprland, sway, wayfire, etc.)
 - cairo
 - libpulseaudio
 - rust

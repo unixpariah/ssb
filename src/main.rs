@@ -20,13 +20,12 @@ use rayon::prelude::*;
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat, delegate_shm,
+    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
     output::{OutputHandler, OutputState},
     reexports::{calloop, calloop_wayland_source::WaylandSource},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
-    seat::{pointer::PointerHandler, Capability, SeatHandler, SeatState},
+    seat::pointer::PointerHandler,
     shell::{
         wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler},
         WaylandSurface,
@@ -46,7 +45,7 @@ use util::{
 };
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::{wl_output, wl_pointer::WlPointer},
+    protocol::wl_output,
     Connection, QueueHandle,
 };
 
@@ -77,8 +76,6 @@ struct StatusBar {
     draw_receiver: mpsc::Receiver<()>,
     config: HotConfig,
     first_run: bool,
-    seat_state: SeatState,
-    pointer: Option<WlPointer>,
 }
 
 struct HotConfig {
@@ -205,8 +202,6 @@ impl StatusBar {
             draw_receiver: rx,
             config,
             first_run: true,
-            seat_state: SeatState::new(globals, qh),
-            pointer: None,
         }
     }
 
@@ -269,7 +264,7 @@ impl StatusBar {
                         _ => format.replace("%c", ""),
                     };
 
-                    let name = match &info.command {
+                    let mut name = match &info.command {
                         Cmd::Workspaces(_) => "workspaces",
                         Cmd::Memory(_) => "memory",
                         Cmd::Cpu(_) => "cpu",
@@ -281,29 +276,43 @@ impl StatusBar {
                     };
 
                     let img = get_style(&self.config.css, name, &format).unwrap_or_else(|_| {
+                        if !CSS.contains(name) {
+                            name = "*";
+                        }
                         let index = CSS.find(name).expect(MESSAGE);
                         let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
                         let mut css = CSS[index..end_index].to_string();
                         css.push_str(&format!(" content: \"{}\"; }}", format));
+
+                        if name != "*" {
+                            if let Some(index) = CSS.find('*') {
+                                let end_index =
+                                    CSS[index..].find('}').map(|i| i + index).unwrap_or(index);
+
+                                css.push_str(&CSS[index..=end_index]);
+                            }
+                        }
+
                         css_image::parse(css).expect(MESSAGE)
                     });
 
-                    info.cache = img
-                        .get(name)
-                        .map_or_else(
-                            || {
-                                warn!("Failed to parse {name} module css, using default style");
-                                let index = CSS.find(name).expect(MESSAGE);
-                                let end_index =
-                                    CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                                let mut css = CSS[index..end_index].to_string();
-                                css.push_str(&format!(" content: \"{}\"; }}", format));
-                                let css = css_image::parse(css).expect(MESSAGE);
-                                image::load_from_memory(css.get(name).expect(MESSAGE))
-                            },
-                            |img| image::load_from_memory(img),
-                        )
-                        .unwrap();
+                    info.cache = match img.get(name) {
+                        Some(img) => image::load_from_memory(img).unwrap(),
+                        None if img.get("*").is_some() => {
+                            let img = img.get("*").unwrap();
+                            image::load_from_memory(img).unwrap()
+                        }
+                        None => {
+                            warn!("Failed to parse {name} module css, using default style");
+                            let index = CSS.find(name).expect(MESSAGE);
+                            let end_index =
+                                CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
+                            let mut css = CSS[index..end_index].to_string();
+                            css.push_str(&format!(" content: \"{}\"; }}", format));
+                            let css = css_image::parse(css).expect(MESSAGE);
+                            image::load_from_memory(css.get(name).expect(MESSAGE)).unwrap()
+                        }
+                    };
 
                     info.output = output;
                 }
@@ -317,14 +326,32 @@ fn get_style(
     name: &str,
     format: &str,
 ) -> Result<HashMap<String, Vec<u8>>, Box<dyn Error + Sync + Send>> {
-    let Some(index) = css.find(name) else {
-        warn!("Style declaration for module {name} not found, using default style");
-        return Err("".into());
+    let mut global = false;
+    let index = match css.find(name) {
+        Some(index) => index,
+        None if css.find('*').is_some() => {
+            global = true;
+            css.find('*').unwrap()
+        }
+        None => {
+            warn!("Style declaration for module {name} not found, using default style");
+            return Err("".into());
+        }
     };
 
     let end_index = css[index..].find('}').map(|i| i + index).ok_or("")?;
     let css_section = css[index..end_index].to_string();
-    let css_section = format!("{} content: \"{}\"; }}", css_section, format);
+    let mut css_section = format!("{} content: \"{}\"; }}", css_section, format);
+
+    if !global {
+        if let Some(index) = css.find('*') {
+            let end_index = css[index..].find('}').map(|i| i + index).unwrap_or(index);
+
+            css_section.push(' ');
+            css_section.push_str(&css[index..=end_index]);
+        }
+    }
+
     let Ok(img) = css_image::parse(css_section) else {
         warn!("Failed to parse {name} module css, using default style");
         return Err("".into());
@@ -429,12 +456,8 @@ impl PointerHandler for StatusBar {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
         _pointer: &wayland_client::protocol::wl_pointer::WlPointer,
-        events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
+        _events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
     ) {
-        events.iter().for_each(|event| {
-            let pos = event.position;
-            println!("Pointer position: {:?}", pos);
-        });
     }
 }
 
@@ -450,7 +473,7 @@ impl LayerShellHandler for StatusBar {
         self.surfaces
             .iter_mut()
             .find(|surface| &surface.layer_surface == layer)
-            .unwrap() // Layer has to exist to be configured
+            .unwrap()
             .change_size();
     }
 
@@ -488,52 +511,6 @@ impl CompositorHandler for StatusBar {
         _qh: &QueueHandle<Self>,
         _surface: &wayland_client::protocol::wl_surface::WlSurface,
         _time: u32,
-    ) {
-    }
-}
-
-impl SeatHandler for StatusBar {
-    fn seat_state(&mut self) -> &mut smithay_client_toolkit::seat::SeatState {
-        &mut self.seat_state
-    }
-
-    fn new_capability(
-        &mut self,
-        _conn: &Connection,
-        qh: &QueueHandle<Self>,
-        seat: wayland_client::protocol::wl_seat::WlSeat,
-        capability: smithay_client_toolkit::seat::Capability,
-    ) {
-        if capability == Capability::Pointer {
-            self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
-        }
-    }
-
-    fn remove_capability(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wayland_client::protocol::wl_seat::WlSeat,
-        capability: smithay_client_toolkit::seat::Capability,
-    ) {
-        if capability == Capability::Pointer {
-            self.pointer = None;
-        }
-    }
-
-    fn new_seat(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wayland_client::protocol::wl_seat::WlSeat,
-    ) {
-    }
-
-    fn remove_seat(
-        &mut self,
-        _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wayland_client::protocol::wl_seat::WlSeat,
     ) {
     }
 }
@@ -652,8 +629,6 @@ delegate_output!(StatusBar);
 delegate_layer!(StatusBar);
 delegate_compositor!(StatusBar);
 delegate_shm!(StatusBar);
-delegate_pointer!(StatusBar);
-delegate_seat!(StatusBar);
 
 impl ProvidesRegistryState for StatusBar {
     fn registry(&mut self) -> &mut RegistryState {
