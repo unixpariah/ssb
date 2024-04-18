@@ -6,6 +6,7 @@ mod util;
 use crate::util::helpers::CSS;
 use cairo::{Context, ImageSurface};
 use config::{get_config, get_css, Config};
+use css_image::style::Style;
 use image::{ColorType, DynamicImage};
 use log::{info, warn, LevelFilter};
 use modules::{
@@ -79,7 +80,7 @@ struct StatusBar {
 }
 
 struct HotConfig {
-    css: String,
+    css: HashMap<String, Style>,
     css_listener: broadcast::Receiver<()>,
     config: Config,
     config_listener: broadcast::Receiver<()>,
@@ -98,10 +99,13 @@ impl StatusBar {
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
-        let css = get_css().unwrap_or_else(|_| {
+        let css_str = get_css().unwrap_or("".to_string());
+
+        let css = css_image::parse(&css_str).unwrap_or_else(|_| {
             warn!("CSS could not be parsed, using default styles");
-            toml::from_str(CSS).expect(MESSAGE)
+            CSS.to_owned()
         });
+
         let config = get_config().unwrap_or_else(|_| {
             warn!("Config file could not be parsed, using default configuration");
             toml::from_str(TOML).expect(MESSAGE)
@@ -119,8 +123,8 @@ impl StatusBar {
             .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) => (listeners.new_workspace_listener(), "%s"),
-                    Cmd::WindowTitle => (listeners.new_workspace_listener(), "%s"),
+                    Cmd::Workspaces(_) => (listeners.new_workspace_listener().ok()?, "%s"),
+                    Cmd::WindowTitle => (listeners.new_workspace_listener().ok()?, "%s"),
                     Cmd::Memory(MemorySettings {
                         interval,
                         formatting,
@@ -159,7 +163,7 @@ impl StatusBar {
                     ),
                     Cmd::Custom(settings) => {
                         let trigger = match &settings.event {
-                            Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
+                            Trigger::WorkspaceChanged => listeners.new_workspace_listener().ok()?,
                             Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
                             Trigger::FileChange(path) => listeners.new_file_listener(path),
                             Trigger::VolumeChanged => listeners.new_volume_change_listener(),
@@ -209,9 +213,11 @@ impl StatusBar {
     fn reload_config(&mut self) {
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
-            self.config.css = get_css().unwrap_or_else(|_| {
+            let css_str = get_css().unwrap_or("".to_string());
+
+            self.config.css = css_image::parse(&css_str).unwrap_or_else(|_| {
                 warn!("CSS could not be parsed, using default styles");
-                toml::from_str(CSS).expect(MESSAGE)
+                CSS.to_owned()
             });
 
             config_changed = true;
@@ -264,7 +270,7 @@ impl StatusBar {
                         _ => format.replace("%c", ""),
                     };
 
-                    let mut name = match &info.command {
+                    let name = match &info.command {
                         Cmd::Workspaces(_) => "workspaces",
                         Cmd::Memory(_) => "memory",
                         Cmd::Cpu(_) => "cpu",
@@ -275,27 +281,7 @@ impl StatusBar {
                         Cmd::Custom(custom) => &custom.name,
                     };
 
-                    let img = get_style(&self.config.css, name, &format).unwrap_or_else(|_| {
-                        if !CSS.contains(name) {
-                            name = "*";
-                        }
-                        let index = CSS.find(name).expect(MESSAGE);
-                        let end_index = CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                        let mut css = CSS[index..end_index].to_string();
-                        css.push_str(&format!(" content: \"{}\"; }}", format));
-
-                        if name != "*" {
-                            if let Some(index) = CSS.find('*') {
-                                let end_index =
-                                    CSS[index..].find('}').map(|i| i + index).unwrap_or(index);
-
-                                css.push_str(&CSS[index..=end_index]);
-                            }
-                        }
-
-                        css_image::parse(css).expect(MESSAGE)
-                    });
-
+                    let img = get_style(&self.config.css, name, &format).unwrap();
                     info.cache = match img.get(name) {
                         Some(img) => image::load_from_memory(img).unwrap(),
                         None if img.get("*").is_some() => {
@@ -304,12 +290,11 @@ impl StatusBar {
                         }
                         None => {
                             warn!("Failed to parse {name} module css, using default style");
-                            let index = CSS.find(name).expect(MESSAGE);
-                            let end_index =
-                                CSS[index..].find('}').map(|i| i + index).expect(MESSAGE);
-                            let mut css = CSS[index..end_index].to_string();
-                            css.push_str(&format!(" content: \"{}\"; }}", format));
-                            let css = css_image::parse(css).expect(MESSAGE);
+                            let mut css = CSS.get(name).expect(MESSAGE).to_owned();
+                            css.content = Some(format.to_string());
+                            let css: HashMap<String, Style> =
+                                [(name.to_string(), css)].iter().cloned().collect();
+                            let css = css_image::render(css).expect(MESSAGE);
                             image::load_from_memory(css.get(name).expect(MESSAGE)).unwrap()
                         }
                     };
@@ -322,42 +307,38 @@ impl StatusBar {
 }
 
 fn get_style(
-    css: &str,
+    css: &HashMap<String, Style>,
     name: &str,
     format: &str,
 ) -> Result<HashMap<String, Vec<u8>>, Box<dyn Error + Sync + Send>> {
+    let mut styles = HashMap::new();
     let mut global = false;
-    let index = match css.find(name) {
-        Some(index) => index,
-        None if css.find('*').is_some() => {
-            global = true;
-            css.find('*').unwrap()
-        }
-        None => {
-            warn!("Style declaration for module {name} not found, using default style");
-            return Err("".into());
-        }
-    };
 
-    let end_index = css[index..].find('}').map(|i| i + index).ok_or("")?;
-    let css_section = css[index..end_index].to_string();
-    let mut css_section = format!("{} content: \"{}\"; }}", css_section, format);
+    if let Some(style) = css.get(name).or_else(|| {
+        global = true;
+        css.get("*")
+    }) {
+        let mut style = style.clone();
+        style.content = Some(format.to_string());
+        styles.insert(name.to_string(), style);
+    } else {
+        warn!("Style declaration for module {name} not found, using default style");
+        return Err("".into());
+    }
 
     if !global {
-        if let Some(index) = css.find('*') {
-            let end_index = css[index..].find('}').map(|i| i + index).unwrap_or(index);
-
-            css_section.push(' ');
-            css_section.push_str(&css[index..=end_index]);
+        if let Some(style) = css.get("*") {
+            styles.insert("*".to_string(), style.clone());
         }
     }
 
-    let Ok(img) = css_image::parse(css_section) else {
-        warn!("Failed to parse {name} module css, using default style");
-        return Err("".into());
-    };
-
-    Ok(img)
+    match css_image::render(styles) {
+        Ok(img) => Ok(img),
+        Err(_) => {
+            warn!("Failed to parse {name} module css, using default style");
+            Err("".into())
+        }
+    }
 }
 
 impl OutputHandler for StatusBar {

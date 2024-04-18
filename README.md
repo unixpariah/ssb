@@ -22,7 +22,6 @@ Ssb is a simple status bar for wlroots based compositors.
 - [ ] Network
 - [ ] Persistant workspaces
 - [ ] Bluetooth
-- [ ] Tray
 
 ## Build time dependencies
 

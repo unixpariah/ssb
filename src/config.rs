@@ -1,5 +1,5 @@
 use crate::{
-    util::helpers::{CSS, TOML},
+    util::helpers::{CSS_STRING, TOML},
     Cmd,
 };
 use log::{info, warn};
@@ -22,7 +22,7 @@ pub fn get_css() -> Result<String, Box<dyn crate::Error>> {
             css_path.display()
         );
         fs::create_dir_all(css_path.parent().ok_or("")?)?;
-        _ = fs::write(&css_path, CSS);
+        _ = fs::write(&css_path, CSS_STRING);
     }
 
     Ok(fs::read_to_string(&css_path)?)

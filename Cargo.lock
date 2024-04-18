@@ -218,11 +218,12 @@ checksum = "248e3bacc7dc6baa3b21e405ee045c3047101a49145e7e9eca583ab4c2ca5345"
 [[package]]
 name = "css-image"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75d7d0df5bc0184b3f08aeabd16551152484d6ef46d31914c8f98c06f688e6ef"
+source = "git+https://github.com/unixpariah/css-image#64bdb7a25bbb24b9afc079cf810228d2fdb74c6b"
 dependencies = [
  "cairo-rs",
+ "lazy_static",
  "rayon",
+ "regex",
 ]
 
 [[package]]
@@ -1206,6 +1207,7 @@ dependencies = [
  "hyprland",
  "image",
  "inotify",
+ "lazy_static",
  "libpulse-binding",
  "log",
  "pulsectl-rs",

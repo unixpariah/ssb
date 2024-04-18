@@ -1,7 +1,6 @@
 use hyprland::shared::HyprData;
 use hyprland::shared::HyprDataActive;
 use hyprland::shared::HyprDataActiveOptional;
-use log::warn;
 use serde::Deserialize;
 use serde::Serialize;
 use std::error::Error;
@@ -17,18 +16,10 @@ pub fn get_window_title() -> Option<String> {
 }
 
 pub fn workspaces(workspace: &WorkspacesIcons) -> String {
-    let mut active_workspace = None;
-    let mut length = None;
-
-    if let Ok((active, len)) = hyprland() {
-        active_workspace = Some(active);
-        length = Some(len);
-    }
-
-    if active_workspace.is_none() || length.is_none() {
-        warn!("Unsupported compositor, workspace module disabled");
-        return "".to_string();
-    }
+    let (active_workspace, length) = match hyprland() {
+        Ok((active, len)) => (Some(active), Some(len)),
+        Err(_) => (None, None),
+    };
 
     let active_workspace = active_workspace.unwrap();
     let length = length.unwrap();

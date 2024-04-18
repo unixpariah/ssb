@@ -1,6 +1,6 @@
 extern crate libpulse_binding as pulse;
 
-use hyprland::{event_listener::EventListener, shared::HyprDataActive};
+use hyprland::event_listener::EventListener;
 use inotify::{Inotify, WatchMask};
 use log::warn;
 use pulse::{
@@ -62,18 +62,18 @@ impl Listeners {
         }
     }
 
-    pub fn new_workspace_listener(&mut self) -> broadcast::Receiver<()> {
+    pub fn new_workspace_listener(
+        &mut self,
+    ) -> Result<broadcast::Receiver<()>, Box<dyn std::error::Error>> {
         if let Ok(workspace_listener) = self.workspace_listener.lock() {
             if let Some(workspace_listener) = workspace_listener.as_ref() {
-                return workspace_listener.tx.subscribe();
+                return Ok(workspace_listener.tx.subscribe());
             }
         }
 
-        let listener;
-
         let (tx, rx) = broadcast::channel(1);
 
-        listener = if hyprland::data::Workspace::get_active().is_ok() {
+        let listener = if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
             let mut listener = EventListener::new();
             {
                 let tx = tx.clone();
@@ -98,12 +98,13 @@ impl Listeners {
 
             WorkspaceListener::Hyprland(listener)
         } else {
-            return rx;
+            warn!("Unsupported compositor, disabling workspaces module");
+            return Err("Hyprland instance signature not found".into());
         };
 
         self.workspace_listener =
             Arc::new(Mutex::new(Some(WorkspaceListenerData { tx, listener })));
-        rx
+        Ok(rx)
     }
 
     pub fn start_all(&mut self) {

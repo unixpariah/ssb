@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+
+use css_image::style::Style;
 use image::{GenericImageView, ImageBuffer};
+use lazy_static::lazy_static;
 
 pub fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
     let total_width = images.iter().map(|img| img.width()).sum();
@@ -110,7 +114,7 @@ command.Backlight = { formatting = "%c %s%", icons = ["", "", "", ""
 command.Battery = { interval = 5000, formatting = "%c %s%", icons = ["󰁺" ,"󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"] }
 "#;
 
-pub const CSS: &str = r#"
+pub const CSS_STRING: &str = r#"
 * {
     font-family: "JetBrainsMono Nerd Font";
     font-size: 16px;
@@ -148,3 +152,7 @@ title {
     margin-right: 25px;
 }
 "#;
+
+lazy_static! {
+    pub static ref CSS: HashMap<String, Style> = css_image::parse(CSS_STRING).unwrap();
+}
