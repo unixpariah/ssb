@@ -7,7 +7,6 @@ edition = "2021"
 cairo-rs = { version = "0.19.2", default-features = false, features = ["png"] }
 css-image = "0.4.0"
 #css-image = { path = "../css-image" }
-#css-image = { git = "https://github.com/unixpariah/css-image" }
 dirs = "5.0.1"
 hyprland = { version = "0.3.x", default-features = false, features = ["tokio", "listener"] }
 image = { version = "0.25.0", default-features = false, features = ["png"] }

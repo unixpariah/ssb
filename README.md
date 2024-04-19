@@ -11,14 +11,22 @@ Ssb is a simple status bar for wlroots based compositors.
 
 ## Modules
 
-- [x] Workspaces (Avaliable only for Hyprland atm)
+- [x] Workspaces:
+    - [x] Hyprland
+    - [ ] Sway
+    - [ ] River
+    - [ ] Dwl
+- [x] Current window title
+    - [x] Hyprland
+    - [ ] Sway
+    - [ ] River
+    - [ ] Dwl
 - [x] Battery
 - [x] Backlight
 - [x] Pulseaudio
 - [x] Memory
 - [x] CPU average Load
 - [x] Custom scripts
-- [x] Current window title
 - [ ] Network
 - [ ] Persistant workspaces
 - [ ] Bluetooth
