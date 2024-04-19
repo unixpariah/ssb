@@ -13,12 +13,12 @@ Ssb is a simple status bar for wlroots based compositors.
 
 - [x] Workspaces:
     - [x] Hyprland
-    - [ ] Sway
+    - [x] Sway
     - [ ] River
     - [ ] Dwl
 - [x] Current window title
     - [x] Hyprland
-    - [ ] Sway
+    - [x] Sway
     - [ ] River
     - [ ] Dwl
 - [x] Battery

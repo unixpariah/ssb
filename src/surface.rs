@@ -42,7 +42,6 @@ impl Surface {
             },
         );
         right_imgs.reverse();
-        //println!("{:?}", self.output_info.name);
 
         let left = combine_images(&left_imgs);
         let center = combine_images(&center_imgs);

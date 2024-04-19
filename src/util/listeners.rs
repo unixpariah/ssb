@@ -12,8 +12,9 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    thread,
+    thread::{self, JoinHandle},
 };
+use swayipc::EventType;
 use tokio::sync::broadcast;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -26,6 +27,7 @@ pub enum Trigger {
 
 pub enum WorkspaceListener {
     Hyprland(EventListener),
+    Sway(JoinHandle<()>),
 }
 
 pub struct WorkspaceListenerData {
@@ -73,33 +75,52 @@ impl Listeners {
 
         let (tx, rx) = broadcast::channel(1);
 
-        let listener = if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
-            let mut listener = EventListener::new();
-            {
-                let tx = tx.clone();
-                listener.add_workspace_destroy_handler(move |_| {
-                    _ = tx.send(());
-                });
-            }
+        let hyprland = std::env::var("HYPRLAND_INSTANCE_SIGNATURE");
+        let sway = std::env::var("SWAYSOCK");
 
-            {
-                let tx = tx.clone();
-                listener.add_workspace_change_handler(move |_| {
-                    _ = tx.send(());
-                });
-            }
+        let listener = match (hyprland.is_ok(), sway.is_ok()) {
+            (true, _) => {
+                let mut listener = EventListener::new();
+                {
+                    let tx = tx.clone();
+                    listener.add_workspace_destroy_handler(move |_| {
+                        _ = tx.send(());
+                    });
+                }
 
-            {
-                let tx = tx.clone();
-                listener.add_active_monitor_change_handler(move |_| {
-                    _ = tx.send(());
-                });
-            }
+                {
+                    let tx = tx.clone();
+                    listener.add_workspace_change_handler(move |_| {
+                        _ = tx.send(());
+                    });
+                }
 
-            WorkspaceListener::Hyprland(listener)
-        } else {
-            warn!("Unsupported compositor, disabling workspaces module");
-            return Err("Hyprland instance signature not found".into());
+                {
+                    let tx = tx.clone();
+                    listener.add_active_monitor_change_handler(move |_| {
+                        _ = tx.send(());
+                    });
+                }
+
+                WorkspaceListener::Hyprland(listener)
+            }
+            (_, true) => {
+                let listener = swayipc::Connection::new()?
+                    .subscribe([EventType::Workspace, EventType::Output])?;
+
+                let tx = tx.clone();
+                let handle = thread::spawn(move || {
+                    listener.for_each(|_| {
+                        _ = tx.send(());
+                    });
+                });
+
+                WorkspaceListener::Sway(handle)
+            }
+            _ => {
+                warn!("Unsupported compositor, disabling workspaces module");
+                return Err("No supported compositor found".into());
+            }
         };
 
         self.workspace_listener =
@@ -174,6 +195,7 @@ impl Listeners {
                         WorkspaceListener::Hyprland(listener) => {
                             let _ = listener.start_listener();
                         }
+                        WorkspaceListener::Sway(_) => {}
                     }
                 }
             }
