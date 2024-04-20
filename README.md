@@ -8,19 +8,16 @@ Ssb is a simple status bar for wlroots based compositors.
 - [x] Hot reload styling
 - [ ] Per output configuration
 - [ ] Hot reload modules
+- [ ] Mouse support
 
 ## Modules
 
 - [x] Workspaces:
     - [x] Hyprland
     - [x] Sway
-    - [ ] River
-    - [ ] Dwl
 - [x] Current window title
     - [x] Hyprland
     - [x] Sway
-    - [ ] River
-    - [ ] Dwl
 - [x] Battery
 - [x] Backlight
 - [x] Pulseaudio
@@ -30,6 +27,7 @@ Ssb is a simple status bar for wlroots based compositors.
 - [ ] Network
 - [ ] Persistant workspaces
 - [ ] Bluetooth
+- [ ] Date and time
 
 ## Build time dependencies
 

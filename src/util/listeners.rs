@@ -218,10 +218,7 @@ impl Listeners {
                     if volume_listener.is_none() {
                         return;
                     }
-
-                    // Safe to unwrap because we just checked if it was none
                     _ = volume_listener.clone().unwrap().send(());
-                    thread::sleep(std::time::Duration::from_millis(100));
                 }
             })));
             context.subscribe(InterestMaskSet::SINK, |_| {});
@@ -271,7 +268,6 @@ impl Listeners {
 
             if let Err(e) = file_listener
                 .as_mut()
-                // Safe to unwrap because we just checked if it was none
                 .unwrap()
                 .inotify
                 .watches()
