@@ -3,11 +3,12 @@ mod modules;
 mod surface;
 mod util;
 
-use crate::util::helpers::CSS;
+use crate::util::helpers::CSS_STRING;
 use cairo::{Context, ImageSurface};
 use config::{get_config, get_css, Config};
 use css_image::style::Style;
 use image::{ColorType, DynamicImage};
+use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
 use modules::{
     audio::AudioSettings,
@@ -49,6 +50,10 @@ use wayland_client::{
     protocol::wl_output,
     Connection, QueueHandle,
 };
+
+lazy_static! {
+    pub static ref CSS: HashMap<String, Style> = css_image::parse(CSS_STRING).expect(MESSAGE);
+}
 
 pub struct ModuleData {
     output: String,
@@ -123,8 +128,9 @@ impl StatusBar {
             .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) => (listeners.new_workspace_listener().ok()?, "%s"),
-                    Cmd::WindowTitle => (listeners.new_workspace_listener().ok()?, "%s"),
+                    Cmd::Workspaces(_) | Cmd::WindowTitle => {
+                        (listeners.new_workspace_listener().ok()?, "%s")
+                    }
                     Cmd::Memory(MemorySettings {
                         interval,
                         formatting,
@@ -133,30 +139,32 @@ impl StatusBar {
                     | Cmd::Cpu(CpuSettings {
                         interval,
                         formatting,
+                        ..
                     })
                     | Cmd::Battery(BatterySettings {
                         interval,
                         formatting,
                         ..
                     }) => {
-                        if let Cmd::Battery(_) = &module.command {
-                            if battery_details().is_err() {
-                                warn!("Battery not found, deactivating module");
-                                return None;
-                            }
+                        if matches!(&module.command, Cmd::Battery(_)) && battery_details().is_err()
+                        {
+                            warn!("Battery not found, deactivating module");
+                            return None;
                         }
                         (listeners.new_time_listener(*interval), formatting.as_str())
                     }
-                    Cmd::Backlight(settings) => match get_backlight_path() {
-                        Ok(path) => (
-                            listeners.new_file_listener(&path.join("brightness")),
-                            settings.formatting.as_str(),
-                        ),
-                        Err(_) => {
-                            warn!("Backlight not found, deactivating module");
-                            return None;
+                    Cmd::Backlight(settings) => {
+                        match get_backlight_path().map(|path| path.join("brightness")) {
+                            Ok(path) => (
+                                listeners.new_file_listener(&path),
+                                settings.formatting.as_str(),
+                            ),
+                            Err(_) => {
+                                warn!("Backlight not found, deactivating module");
+                                return None;
+                            }
                         }
-                    },
+                    }
                     Cmd::Audio(settings) => (
                         listeners.new_volume_change_listener(),
                         settings.formatting.as_str(),
@@ -312,33 +320,26 @@ fn get_style(
     format: &str,
 ) -> Result<HashMap<String, Vec<u8>>, Box<dyn Error + Sync + Send>> {
     let mut styles = HashMap::new();
-    let mut global = false;
-
-    if let Some(style) = css.get(name).or_else(|| {
-        global = true;
-        css.get("*")
-    }) {
-        let mut style = style.clone();
-        style.content = Some(format.to_string());
-        styles.insert(name.to_string(), style);
-    } else {
-        warn!("Style declaration for module {name} not found, using default style");
-        return Err("".into());
-    }
-
-    if !global {
-        if let Some(style) = css.get("*") {
-            styles.insert("*".to_string(), style.clone());
+    match css.get(name).or_else(|| css.get("*")) {
+        Some(style) => {
+            let mut style = style.clone();
+            style.content = Some(format.to_string());
+            styles.insert(name.to_string(), style);
         }
+        None => {
+            warn!("Style declaration for module {name} not found, using default style");
+            return Err("".into());
+        }
+    };
+
+    if css.get("*").is_some() && css.get(name).is_none() {
+        styles.insert("*".to_string(), css.get("*").unwrap().clone());
     }
 
-    match css_image::render(styles) {
-        Ok(img) => Ok(img),
-        Err(_) => {
-            warn!("Failed to parse {name} module css, using default style");
-            Err("".into())
-        }
-    }
+    css_image::render(styles).map_err(|_| {
+        warn!("Failed to parse {name} module css, using default style");
+        "".into()
+    })
 }
 
 impl OutputHandler for StatusBar {

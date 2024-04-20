@@ -218,8 +218,6 @@ checksum = "248e3bacc7dc6baa3b21e405ee045c3047101a49145e7e9eca583ab4c2ca5345"
 [[package]]
 name = "css-image"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1c101349674abeaff7eb7daf9424c39d9f68cf4b68b47b5e15c766b61410c43"
 dependencies = [
  "cairo-rs",
  "lazy_static",
@@ -918,15 +916,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulsectl-rs"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06a988bceed1981b2c5fc4a3da0e4e073fdaff8e6bd022b089f54bc573dc3cfc"
-dependencies = [
- "libpulse-binding",
-]
-
-[[package]]
 name = "quick-xml"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1211,7 +1200,6 @@ dependencies = [
  "lazy_static",
  "libpulse-binding",
  "log",
- "pulsectl-rs",
  "rayon",
  "serde",
  "simplelog",

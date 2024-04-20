@@ -26,7 +26,7 @@ pub enum Trigger {
 }
 
 pub enum WorkspaceListener {
-    Hyprland(EventListener),
+    Hyprland(Box<EventListener>),
     Sway(JoinHandle<()>),
 }
 
@@ -102,7 +102,7 @@ impl Listeners {
                     });
                 }
 
-                WorkspaceListener::Hyprland(listener)
+                WorkspaceListener::Hyprland(Box::new(listener))
             }
             (_, true) => {
                 let listener = swayipc::Connection::new()?
