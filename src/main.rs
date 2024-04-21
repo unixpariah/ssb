@@ -82,6 +82,7 @@ struct StatusBar {
     draw_receiver: mpsc::Receiver<()>,
     config: HotConfig,
     first_run: bool,
+    listeners: Listeners,
 }
 
 struct HotConfig {
@@ -214,6 +215,7 @@ impl StatusBar {
             draw_receiver: rx,
             config,
             first_run: true,
+            listeners,
         }
     }
 
@@ -240,7 +242,7 @@ impl StatusBar {
                 true => Anchor::TOP,
                 false => Anchor::BOTTOM,
             };
-            self.surfaces.par_iter_mut().for_each(|surface| {
+            self.surfaces.iter_mut().for_each(|surface| {
                 surface.create_background(&self.config.config);
                 surface.layer_surface.set_anchor(anchor);
                 surface

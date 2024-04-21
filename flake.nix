@@ -18,7 +18,6 @@
         };
         rustEnv = pkgs.mkShell {
           buildInputs = with pkgs; [
-            nodejs_21
             rustc
             cargo
             pkg-config
