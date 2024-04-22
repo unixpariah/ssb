@@ -1,5 +1,5 @@
 use crate::{
-    util::helpers::{CSS_STRING, TOML},
+    util::helpers::{CSS_STRING, TOML_STRING},
     Cmd,
 };
 use log::{info, warn};
@@ -43,7 +43,7 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
             config_path.display()
         );
         fs::create_dir_all(config_path.parent().ok_or("")?)?;
-        _ = fs::write(&config_path, TOML);
+        _ = fs::write(&config_path, TOML_STRING);
     }
 
     let config = toml::from_str::<Config>(fs::read_to_string(&config_path)?.trim())?;
@@ -51,14 +51,14 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
     Ok(config)
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct PositionedModules {
     pub left: Vec<Module>,
     pub center: Vec<Module>,
     pub right: Vec<Module>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: String,
@@ -66,12 +66,18 @@ pub struct Config {
     pub background: [u8; 4],
     #[serde(default = "topbar")]
     pub topbar: bool,
+    #[serde(default = "layer")]
+    pub layer: String,
     #[serde(default = "height")]
     pub height: i32,
     #[serde(default)]
     pub font: Font,
     #[serde(default)]
     pub modules: PositionedModules,
+}
+
+fn layer() -> String {
+    "overlay".to_string()
 }
 
 fn unkown() -> String {

@@ -1,21 +1,23 @@
-use log::warn;
-use serde::{Deserialize, Serialize};
-
 use super::{
     audio::{audio, AudioSettings},
     backlight::{backlight_details, BacklightSettings},
     battery::{battery_details, BatterySettings},
     cpu::{usage, CpuSettings},
     memory::{memory_usage, MemorySettings},
-    workspaces::{get_window_title, workspaces, WorkspacesIcons},
+    persistant_workspaces::{persistant_workspaces, PersistantWorkspacesIcons},
+    title::get_window_title,
+    workspaces::{workspaces, WorkspacesIcons},
 };
 use crate::util::listeners::Trigger;
+use log::warn;
+use serde::{Deserialize, Serialize};
 use std::{error::Error, process::Command};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Cmd {
     Custom(CustomSettings),
     Workspaces(WorkspacesIcons),
+    PersistantWorkspaces(PersistantWorkspacesIcons),
     Backlight(BacklightSettings),
     Memory(MemorySettings),
     Audio(AudioSettings),
@@ -57,6 +59,7 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
             }
         },
         Cmd::Workspaces(icons) => workspaces(icons),
+        Cmd::PersistantWorkspaces(icons) => persistant_workspaces(&icons.0),
         Cmd::Memory(settings) => memory_usage(&settings.memory_opts)?,
         Cmd::Backlight(_) => backlight_details()?.split('.').next().ok_or("")?.into(),
         Cmd::Cpu(_) => usage()?.split('.').next().ok_or("")?.into(),

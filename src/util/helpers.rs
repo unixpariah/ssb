@@ -18,7 +18,7 @@ pub fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
     image::DynamicImage::ImageRgba8(new_img)
 }
 
-pub const TOML: &str = r#"
+pub const TOML_STRING: &str = r#"
 unkown = "N/A" # Default value for unknown commands
 background = [20, 15, 33, 255] # Background color as RGB value
 topbar = true # true for bar at top of the screen, false for bar at bottom of the screen

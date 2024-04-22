@@ -51,7 +51,6 @@ impl Drop for Handler {
 impl Handler {
     fn new() -> Result<Self, Box<dyn crate::Error>> {
         let mut proplist = Proplist::new().ok_or("")?;
-
         proplist
             .set_str(
                 pulse::proplist::properties::APPLICATION_NAME,
@@ -77,7 +76,6 @@ impl Handler {
             match context.get_state() {
                 pulse::context::State::Ready => break,
                 pulse::context::State::Failed | pulse::context::State::Terminated => {
-                    eprintln!("context state failed/terminated, quitting...");
                     return Err("Context state failed/terminated without an error".into());
                 }
                 _ => {}

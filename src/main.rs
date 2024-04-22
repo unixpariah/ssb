@@ -22,12 +22,13 @@ use rayon::prelude::*;
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
+    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat, delegate_shm,
     output::{OutputHandler, OutputState},
     reexports::{calloop, calloop_wayland_source::WaylandSource},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
-    seat::pointer::PointerHandler,
+    seat::{pointer::PointerHandler, SeatHandler, SeatState},
     shell::{
         wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler},
         WaylandSurface,
@@ -42,7 +43,7 @@ use std::{
 use surface::Surface;
 use tokio::sync::broadcast;
 use util::{
-    helpers::TOML,
+    helpers::TOML_STRING,
     listeners::{Listeners, Trigger},
 };
 use wayland_client::{
@@ -53,6 +54,7 @@ use wayland_client::{
 
 lazy_static! {
     pub static ref CSS: HashMap<String, Style> = css_image::parse(CSS_STRING).expect(MESSAGE);
+    pub static ref TOML: Config = toml::from_str(TOML_STRING).expect(MESSAGE);
 }
 
 pub struct ModuleData {
@@ -82,7 +84,7 @@ struct StatusBar {
     draw_receiver: mpsc::Receiver<()>,
     config: HotConfig,
     first_run: bool,
-    listeners: Listeners,
+    seat_state: SeatState,
 }
 
 struct HotConfig {
@@ -106,6 +108,7 @@ impl StatusBar {
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
         let css_str = get_css().unwrap_or("".to_string());
+        let seat_state = SeatState::new(globals, qh);
 
         let css = css_image::parse(&css_str).unwrap_or_else(|_| {
             warn!("CSS could not be parsed, using default styles");
@@ -114,7 +117,7 @@ impl StatusBar {
 
         let config = get_config().unwrap_or_else(|_| {
             warn!("Config file could not be parsed, using default configuration");
-            toml::from_str(TOML).expect(MESSAGE)
+            TOML.to_owned()
         });
 
         let mut listeners = Listeners::new();
@@ -129,7 +132,7 @@ impl StatusBar {
             .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) | Cmd::WindowTitle => {
+                    Cmd::Workspaces(_) | Cmd::WindowTitle | Cmd::PersistantWorkspaces(_) => {
                         (listeners.new_workspace_listener().ok()?, "%s")
                     }
                     Cmd::Memory(MemorySettings {
@@ -215,7 +218,7 @@ impl StatusBar {
             draw_receiver: rx,
             config,
             first_run: true,
-            listeners,
+            seat_state,
         }
     }
 
@@ -235,7 +238,7 @@ impl StatusBar {
         if self.config.config_listener.try_recv().is_ok() {
             self.config.config = get_config().unwrap_or_else(|_| {
                 warn!("Config file could not be parsed, using default configuration");
-                toml::from_str(TOML).expect(MESSAGE)
+                TOML.to_owned()
             });
             std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used in here
             let anchor = match self.config.config.topbar {
@@ -245,6 +248,13 @@ impl StatusBar {
             self.surfaces.iter_mut().for_each(|surface| {
                 surface.create_background(&self.config.config);
                 surface.layer_surface.set_anchor(anchor);
+                surface
+                    .layer_surface
+                    .set_layer(match self.config.config.layer.as_str() {
+                        "overlay" => Layer::Overlay,
+                        "background" => Layer::Background,
+                        _ => Layer::Overlay,
+                    });
                 surface
                     .layer_surface
                     .set_size(surface.width as u32, self.config.config.height as u32);
@@ -281,6 +291,7 @@ impl StatusBar {
                     };
 
                     let name = match &info.command {
+                        Cmd::PersistantWorkspaces(_) => "persistant_workspaces",
                         Cmd::Workspaces(_) => "workspaces",
                         Cmd::Memory(_) => "memory",
                         Cmd::Cpu(_) => "cpu",
@@ -291,7 +302,14 @@ impl StatusBar {
                         Cmd::Custom(custom) => &custom.name,
                     };
 
-                    let img = get_style(&self.config.css, name, &format).unwrap();
+                    let img = get_style(&self.config.css, name, &format).unwrap_or_else(|_| {
+                        let mut css = CSS.get(name).expect(MESSAGE).to_owned();
+                        css.content = Some(format.to_string());
+                        let css: HashMap<String, Style> =
+                            [(name.to_string(), css)].iter().cloned().collect();
+                        css_image::render(css).expect(MESSAGE)
+                    });
+
                     info.cache = match img.get(name) {
                         Some(img) => image::load_from_memory(img).unwrap(),
                         None if img.get("*").is_some() => {
@@ -355,17 +373,21 @@ impl OutputHandler for StatusBar {
         qh: &QueueHandle<Self>,
         output: wl_output::WlOutput,
     ) {
+        let config = &self.config.config;
         let surface = self.compositor_state.create_surface(qh);
         let layer = self.layer_shell.create_layer_surface(
             qh,
             surface,
-            Layer::Top,
+            match config.layer.as_str() {
+                "overlay" => Layer::Overlay,
+                "background" => Layer::Background,
+                _ => Layer::Overlay,
+            },
             Some(env!("CARGO_PKG_NAME")),
             Some(&output),
         );
 
         if let Some(info) = self.output_state.info(&output) {
-            let config = &self.config.config;
             let height = config.height;
             if let Some((width, _)) = info.logical_size {
                 layer.set_anchor(match config.topbar {
@@ -499,6 +521,46 @@ impl CompositorHandler for StatusBar {
     }
 }
 
+impl SeatHandler for StatusBar {
+    fn seat_state(&mut self) -> &mut smithay_client_toolkit::seat::SeatState {
+        &mut self.seat_state
+    }
+
+    fn new_seat(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+    ) {
+    }
+
+    fn remove_seat(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+    ) {
+    }
+
+    fn new_capability(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+        _capability: smithay_client_toolkit::seat::Capability,
+    ) {
+    }
+
+    fn remove_capability(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _seat: wayland_client::protocol::wl_seat::WlSeat,
+        _capability: smithay_client_toolkit::seat::Capability,
+    ) {
+    }
+}
+
 impl ShmHandler for StatusBar {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
@@ -613,6 +675,8 @@ delegate_output!(StatusBar);
 delegate_layer!(StatusBar);
 delegate_compositor!(StatusBar);
 delegate_shm!(StatusBar);
+delegate_pointer!(StatusBar);
+delegate_seat!(StatusBar);
 
 impl ProvidesRegistryState for StatusBar {
     fn registry(&mut self) -> &mut RegistryState {
