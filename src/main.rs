@@ -11,12 +11,12 @@ use image::{ColorType, DynamicImage};
 use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
 use modules::{
-    audio::AudioSettings,
-    backlight::{get_backlight_path, BacklightSettings},
+    backlight::get_backlight_path,
     battery::{battery_details, BatterySettings},
     cpu::CpuSettings,
-    custom::{get_command_output, Cmd},
+    custom::Cmd,
     memory::MemorySettings,
+    ModuleData,
 };
 use rayon::prelude::*;
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
@@ -57,15 +57,6 @@ lazy_static! {
     pub static ref TOML: Config = toml::from_str(TOML_STRING).expect(MESSAGE);
 }
 
-pub struct ModuleData {
-    output: String,
-    command: Cmd,
-    format: String,
-    receiver: broadcast::Receiver<()>,
-    cache: DynamicImage,
-    position: Position,
-}
-
 #[derive(Clone)]
 enum Position {
     Left,
@@ -87,11 +78,11 @@ struct StatusBar {
     seat_state: SeatState,
 }
 
-struct HotConfig {
-    css: HashMap<String, Style>,
-    css_listener: broadcast::Receiver<()>,
-    config: Config,
-    config_listener: broadcast::Receiver<()>,
+pub struct HotConfig {
+    pub css: HashMap<String, Style>,
+    pub css_listener: broadcast::Receiver<()>,
+    pub config: Config,
+    pub config_listener: broadcast::Receiver<()>,
 }
 
 static MESSAGE: &str = "If you see this, please contact lazy ass developer behind this project who did not care to update default config";
@@ -265,70 +256,10 @@ impl StatusBar {
             config_changed = true;
         };
 
+        let config = &self.config;
         self.module_info.par_iter_mut().for_each(|info| {
             if info.receiver.try_recv().is_ok() || info.output.is_empty() || config_changed {
-                let output = get_command_output(&info.command)
-                    .unwrap_or(self.config.config.unkown.to_string());
-
-                if output != info.output || config_changed {
-                    let format = info.format.replace("%s", &output);
-                    let format = match &info.command {
-                        Cmd::Battery(BatterySettings { icons, .. })
-                        | Cmd::Backlight(BacklightSettings { icons, .. })
-                        | Cmd::Audio(AudioSettings { icons, .. })
-                            if !icons.is_empty() =>
-                        {
-                            if let Ok(output) = output.parse::<usize>() {
-                                let range_size = 100 / icons.len();
-                                let icon =
-                                    &icons[std::cmp::min(output / range_size, icons.len() - 1)];
-                                format.replace("%c", icon)
-                            } else {
-                                format.replace("%c", "")
-                            }
-                        }
-                        _ => format.replace("%c", ""),
-                    };
-
-                    let name = match &info.command {
-                        Cmd::PersistantWorkspaces(_) => "persistant_workspaces",
-                        Cmd::Workspaces(_) => "workspaces",
-                        Cmd::Memory(_) => "memory",
-                        Cmd::Cpu(_) => "cpu",
-                        Cmd::Battery(_) => "battery",
-                        Cmd::Backlight(_) => "backlight",
-                        Cmd::Audio(_) => "audio",
-                        Cmd::WindowTitle => "title",
-                        Cmd::Custom(custom) => &custom.name,
-                    };
-
-                    let img = get_style(&self.config.css, name, &format).unwrap_or_else(|_| {
-                        let mut css = CSS.get(name).expect(MESSAGE).to_owned();
-                        css.content = Some(format.to_string());
-                        let css: HashMap<String, Style> =
-                            [(name.to_string(), css)].iter().cloned().collect();
-                        css_image::render(css).expect(MESSAGE)
-                    });
-
-                    info.cache = match img.get(name) {
-                        Some(img) => image::load_from_memory(img).unwrap(),
-                        None if img.get("*").is_some() => {
-                            let img = img.get("*").unwrap();
-                            image::load_from_memory(img).unwrap()
-                        }
-                        None => {
-                            warn!("Failed to parse {name} module css, using default style");
-                            let mut css = CSS.get(name).expect(MESSAGE).to_owned();
-                            css.content = Some(format.to_string());
-                            let css: HashMap<String, Style> =
-                                [(name.to_string(), css)].iter().cloned().collect();
-                            let css = css_image::render(css).expect(MESSAGE);
-                            image::load_from_memory(css.get(name).expect(MESSAGE)).unwrap()
-                        }
-                    };
-
-                    info.output = output;
-                }
+                info.render(config_changed, config);
             };
         });
     }

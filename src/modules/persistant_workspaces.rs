@@ -26,11 +26,11 @@ pub fn persistant_workspaces(icons: &HashMap<String, String>) -> String {
                 false => "inactive",
             };
 
-            return icons
+            icons
                 .get(string)
                 .or_else(|| icons.get(&i))
                 .unwrap_or(&i)
-                .to_owned();
+                .to_owned()
         })
         .collect::<Vec<_>>()
         .join("")
