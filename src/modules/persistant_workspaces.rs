@@ -1,4 +1,7 @@
+use crate::get_style;
+
 use super::workspaces::{hyprland, sway};
+use css_image::style::Style;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -16,22 +19,59 @@ pub fn persistant_workspaces(icons: &HashMap<String, String>) -> String {
     }
     .unwrap();
 
-    let length = 10;
-    (1..=length)
+    (1..=10)
         .map(|i| {
-            let i = i.to_string();
-
-            let string = match active_workspace.to_string() == i {
-                true => "active",
-                false => "inactive",
-            };
-
-            icons
-                .get(string)
-                .or_else(|| icons.get(&i))
-                .unwrap_or(&i)
-                .to_owned()
+            let index = i.to_string();
+            match active_workspace == i {
+                true => icons
+                    .get("active")
+                    .or_else(|| icons.get(&index))
+                    .unwrap_or(&index)
+                    .to_owned(),
+                false => icons
+                    .get(&index)
+                    .or_else(|| icons.get("inactive"))
+                    .unwrap_or(&index)
+                    .to_owned(),
+            }
         })
         .collect::<Vec<_>>()
-        .join("")
+        .join(" ")
+}
+
+pub fn _render_persistant_workspaces(css: &HashMap<String, Style>, icons_str: &str) {
+    let icons = icons_str.split_whitespace().collect::<Vec<&str>>();
+
+    let mut width = 0;
+    let icons = icons
+        .iter()
+        .enumerate()
+        .map(|(i, icon)| {
+            let a = get_style(css, &format!("persistant_workspaces#{i}"), icon);
+            let img = image::load_from_memory(
+                a.unwrap()
+                    .get(&format!("persistant_workspaces#{i}"))
+                    .unwrap(),
+            )
+            .unwrap()
+            .to_rgba8();
+            width += img.width();
+            img
+        })
+        .collect::<Vec<_>>();
+
+    let img_width = icons.iter().map(|icon| icon.width()).sum();
+    let height = icons.iter().map(|icon| icon.height()).max().unwrap();
+    let mut img = image::DynamicImage::new_rgba8(img_width, height);
+    let mut width = 0;
+    icons.iter().for_each(|icon| {
+        image::imageops::replace(
+            &mut img,
+            icon,
+            width as i64,
+            (height - icon.height()) as i64,
+        );
+        width += icon.width();
+    });
+    img.save("persistant_workspaces.png").unwrap();
 }

@@ -124,7 +124,7 @@ impl StatusBar {
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
                     Cmd::Workspaces(_) | Cmd::WindowTitle | Cmd::PersistantWorkspaces(_) => {
-                        (listeners.new_workspace_listener().ok()?, "%s")
+                        (listeners.new_workspace_listener(), "%s")
                     }
                     Cmd::Memory(MemorySettings {
                         interval,
@@ -166,7 +166,7 @@ impl StatusBar {
                     ),
                     Cmd::Custom(settings) => {
                         let trigger = match &settings.event {
-                            Trigger::WorkspaceChanged => listeners.new_workspace_listener().ok()?,
+                            Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
                             Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
                             Trigger::FileChange(path) => listeners.new_file_listener(path),
                             Trigger::VolumeChanged => listeners.new_volume_change_listener(),

@@ -33,6 +33,9 @@ pub struct ModuleData {
 impl ModuleData {
     pub fn render(&mut self, config_changed: bool, config: &HotConfig) {
         let output = get_command_output(&self.command).unwrap_or(config.config.unkown.to_string());
+        //if let Cmd::PersistantWorkspaces(_) = &self.command {
+        //render_persistant_workspaces(&config.css, &output);
+        //}
 
         if output != self.output || config_changed {
             let format = self.format.replace("%s", &output);
