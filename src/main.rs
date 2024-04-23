@@ -7,17 +7,9 @@ use crate::util::helpers::CSS_STRING;
 use cairo::{Context, ImageSurface};
 use config::{get_config, get_css, Config};
 use css_image::style::Style;
-use image::{ColorType, DynamicImage};
 use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
-use modules::{
-    backlight::get_backlight_path,
-    battery::{battery_details, BatterySettings},
-    cpu::CpuSettings,
-    custom::Cmd,
-    memory::MemorySettings,
-    ModuleData,
-};
+use modules::{custom::Cmd, ModuleData};
 use rayon::prelude::*;
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
@@ -42,10 +34,7 @@ use std::{
 };
 use surface::Surface;
 use tokio::sync::broadcast;
-use util::{
-    helpers::TOML_STRING,
-    listeners::{Listeners, Trigger},
-};
+use util::{helpers::TOML_STRING, listeners::Listeners};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
     protocol::wl_output,
@@ -118,73 +107,10 @@ impl StatusBar {
             (Position::Right, &config.modules.right),
         ];
 
-        let module_info: Vec<_> = positions
+        let module_info = positions
             .iter()
             .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
-            .filter_map(|(position, module)| {
-                let (receiver, format) = match &module.command {
-                    Cmd::Workspaces(_) | Cmd::WindowTitle | Cmd::PersistantWorkspaces(_) => {
-                        (listeners.new_workspace_listener()?, "%s")
-                    }
-                    Cmd::Memory(MemorySettings { .. })
-                    | Cmd::Cpu(CpuSettings { .. })
-                    | Cmd::Battery(BatterySettings { .. })
-                        if matches!(&module.command, Cmd::Battery(_))
-                            && battery_details().is_err() =>
-                    {
-                        warn!("Battery not found, deactivating module");
-                        return None;
-                    }
-                    Cmd::Memory(MemorySettings {
-                        interval,
-                        formatting,
-                        ..
-                    })
-                    | Cmd::Cpu(CpuSettings {
-                        interval,
-                        formatting,
-                        ..
-                    })
-                    | Cmd::Battery(BatterySettings {
-                        interval,
-                        formatting,
-                        ..
-                    }) => (listeners.new_time_listener(*interval), formatting.as_str()),
-                    Cmd::Backlight(settings) => {
-                        if let Ok(path) = get_backlight_path().map(|path| path.join("brightness")) {
-                            (
-                                listeners.new_file_listener(&path),
-                                settings.formatting.as_str(),
-                            )
-                        } else {
-                            warn!("Backlight not found, deactivating module");
-                            return None;
-                        }
-                    }
-                    Cmd::Audio(settings) => (
-                        listeners.new_volume_change_listener(),
-                        settings.formatting.as_str(),
-                    ),
-                    Cmd::Custom(settings) => {
-                        let trigger = match &settings.event {
-                            Trigger::WorkspaceChanged => listeners.new_workspace_listener()?,
-                            Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
-                            Trigger::FileChange(path) => listeners.new_file_listener(path),
-                            Trigger::VolumeChanged => listeners.new_volume_change_listener(),
-                        };
-                        (trigger, settings.formatting.as_str())
-                    }
-                };
-
-                Some(ModuleData {
-                    output: String::new(),
-                    command: module.command.clone(),
-                    format: format.to_string(),
-                    receiver,
-                    cache: DynamicImage::new(0, 0, ColorType::L8),
-                    position: position.clone(),
-                })
-            })
+            .filter_map(|(position, module)| ModuleData::new(&mut listeners, module, position))
             .collect();
 
         let config_dir = dirs::config_dir().expect("Failed to get config directory");

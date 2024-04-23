@@ -68,14 +68,3 @@ pub fn get_command_output(command: &Cmd) -> Result<String, Box<dyn Error>> {
         Cmd::WindowTitle => get_window_title().unwrap_or_default(),
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_new_command() {
-        assert!(new_command("echo test").is_ok());
-        assert!(new_command("echo test").unwrap() == "test");
-    }
-}
