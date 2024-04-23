@@ -36,7 +36,6 @@ pub struct CustomSettings {
 
 pub fn new_command(command: &str) -> Result<String, Box<dyn Error>> {
     let mut command_vec = command.split_whitespace().collect::<Vec<_>>();
-
     let output = String::from_utf8(
         Command::new(command_vec.remove(0))
             .args(command_vec)

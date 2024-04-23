@@ -81,7 +81,7 @@ impl StatusBar {
     fn new(
         globals: &GlobalList,
         qh: &wayland_client::QueueHandle<Self>,
-        rx: mpsc::Receiver<()>,
+        draw_receiver: mpsc::Receiver<()>,
     ) -> Self {
         let compositor_state =
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
@@ -133,7 +133,7 @@ impl StatusBar {
             shm,
             surfaces: Vec::new(),
             module_info,
-            draw_receiver: rx,
+            draw_receiver,
             config,
             first_run: true,
             seat_state,

@@ -5,8 +5,7 @@ edition = "2021"
 
 [dependencies]
 cairo-rs = { version = "0.19.2", default-features = false, features = ["png"] }
-css-image = "0.4.1"
-#css-image = { path = "../css-image" }
+css-image = { path = "./css-image" }
 dirs = "5.0.1"
 hyprland = { version = "0.3.x", default-features = false, features = ["tokio", "listener"] }
 image = { version = "0.25.0", default-features = false, features = ["png"] }
