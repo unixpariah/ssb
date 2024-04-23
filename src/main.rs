@@ -124,7 +124,16 @@ impl StatusBar {
             .filter_map(|(position, module)| {
                 let (receiver, format) = match &module.command {
                     Cmd::Workspaces(_) | Cmd::WindowTitle | Cmd::PersistantWorkspaces(_) => {
-                        (listeners.new_workspace_listener(), "%s")
+                        (listeners.new_workspace_listener()?, "%s")
+                    }
+                    Cmd::Memory(MemorySettings { .. })
+                    | Cmd::Cpu(CpuSettings { .. })
+                    | Cmd::Battery(BatterySettings { .. })
+                        if matches!(&module.command, Cmd::Battery(_))
+                            && battery_details().is_err() =>
+                    {
+                        warn!("Battery not found, deactivating module");
+                        return None;
                     }
                     Cmd::Memory(MemorySettings {
                         interval,
@@ -140,24 +149,16 @@ impl StatusBar {
                         interval,
                         formatting,
                         ..
-                    }) => {
-                        if matches!(&module.command, Cmd::Battery(_)) && battery_details().is_err()
-                        {
-                            warn!("Battery not found, deactivating module");
-                            return None;
-                        }
-                        (listeners.new_time_listener(*interval), formatting.as_str())
-                    }
+                    }) => (listeners.new_time_listener(*interval), formatting.as_str()),
                     Cmd::Backlight(settings) => {
-                        match get_backlight_path().map(|path| path.join("brightness")) {
-                            Ok(path) => (
+                        if let Ok(path) = get_backlight_path().map(|path| path.join("brightness")) {
+                            (
                                 listeners.new_file_listener(&path),
                                 settings.formatting.as_str(),
-                            ),
-                            Err(_) => {
-                                warn!("Backlight not found, deactivating module");
-                                return None;
-                            }
+                            )
+                        } else {
+                            warn!("Backlight not found, deactivating module");
+                            return None;
                         }
                     }
                     Cmd::Audio(settings) => (
@@ -166,7 +167,7 @@ impl StatusBar {
                     ),
                     Cmd::Custom(settings) => {
                         let trigger = match &settings.event {
-                            Trigger::WorkspaceChanged => listeners.new_workspace_listener(),
+                            Trigger::WorkspaceChanged => listeners.new_workspace_listener()?,
                             Trigger::TimePassed(interval) => listeners.new_time_listener(*interval),
                             Trigger::FileChange(path) => listeners.new_file_listener(path),
                             Trigger::VolumeChanged => listeners.new_volume_change_listener(),

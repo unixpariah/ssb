@@ -123,21 +123,22 @@ impl Listeners {
         Self {
             file_listener: Some(FileListenerData::new()),
             time_listener: Some(Vec::new()),
-            workspace_listener: Some(WorkspaceListenerData::new().unwrap()),
+            workspace_listener: WorkspaceListenerData::new().ok(),
             volume_listener: Some(broadcast::Sender::new(1)),
         }
     }
 
-    pub fn new_workspace_listener(&self) -> broadcast::Receiver<()> {
-        self.workspace_listener.as_ref().unwrap().tx.subscribe()
+    pub fn new_workspace_listener(&self) -> Option<broadcast::Receiver<()>> {
+        Some(self.workspace_listener.as_ref()?.tx.subscribe())
     }
 
     pub fn start_all(&mut self) {
         // They're all initialized as Some so unwrap is safe
         let mut time_listener = self.time_listener.take().unwrap();
         let mut file_listener = self.file_listener.take().unwrap();
-        let mut workspace_listener = self.workspace_listener.take().unwrap();
         let volume_listener = self.volume_listener.take().unwrap();
+
+        let mut workspace_listener = self.workspace_listener.take();
 
         // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
         // to the listeners whose interval has passed and resets the interval in a loop
@@ -183,15 +184,17 @@ impl Listeners {
         });
 
         thread::spawn(move || {
-            if workspace_listener.tx.receiver_count() == 0 {
-                return;
-            }
-
-            match &mut workspace_listener.listener {
-                WorkspaceListener::Hyprland(listener) => {
-                    let _ = listener.start_listener();
+            if let Some(workspace_listener) = &mut workspace_listener {
+                if workspace_listener.tx.receiver_count() == 0 {
+                    return;
                 }
-                WorkspaceListener::Sway(_) => {}
+
+                match &mut workspace_listener.listener {
+                    WorkspaceListener::Hyprland(listener) => {
+                        let _ = listener.start_listener();
+                    }
+                    WorkspaceListener::Sway(_) => {}
+                }
             }
         });
 
