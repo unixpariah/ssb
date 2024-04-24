@@ -147,4 +147,8 @@ network {
 title {
     margin-right: 25px;
 }
+
+persistant_workspaces {
+    margin-left: 35px;
+}
 "#;

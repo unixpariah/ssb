@@ -3,9 +3,10 @@ use std::{cell::RefCell, rc::Rc};
 use libpulse_binding as pulse;
 
 use pulse::callbacks::ListResult;
-use pulse::context::introspect;
+use pulse::context::introspect::{self};
 use pulse::operation::State;
 use pulse::proplist::Proplist;
+use pulse::volume::ChannelVolumes;
 use pulse::{
     context::{introspect::Introspector, Context},
     mainloop::standard::{IterateResult, Mainloop},
@@ -20,25 +21,10 @@ pub struct AudioSettings {
     pub icons: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct DeviceInfo {
-    index: u32,
-    volume: pulse::volume::ChannelVolumes,
-}
-
-impl From<&introspect::SinkInfo<'_>> for DeviceInfo {
-    fn from(info: &introspect::SinkInfo) -> Self {
-        DeviceInfo {
-            index: info.index,
-            volume: info.volume,
-        }
-    }
-}
-
 struct Handler {
-    pub mainloop: Mainloop,
-    pub context: Context,
-    pub introspect: Introspector,
+    mainloop: Mainloop,
+    context: Context,
+    introspect: Introspector,
 }
 
 impl Drop for Handler {
@@ -63,7 +49,7 @@ impl Handler {
         context.connect(None, pulse::context::FlagSet::NOFLAGS, None)?;
 
         loop {
-            match mainloop.iterate(false) {
+            match mainloop.iterate(true) {
                 IterateResult::Err(e) => {
                     return Err(e.into());
                 }
@@ -91,12 +77,12 @@ impl Handler {
         })
     }
 
-    pub fn wait_for_operation<G: ?Sized>(
+    fn wait_for_operation<G: ?Sized>(
         &mut self,
         op: Operation<G>,
     ) -> Result<(), Box<dyn crate::Error>> {
         loop {
-            match self.mainloop.iterate(false) {
+            match self.mainloop.iterate(true) {
                 IterateResult::Err(e) => return Err(e.into()),
                 IterateResult::Success(_) => {}
                 IterateResult::Quit(_) => {}
@@ -114,81 +100,44 @@ impl Handler {
         Ok(())
     }
 
-    fn get_server_info(&mut self) -> Result<String, Box<dyn crate::Error>> {
+    fn get_default_device_volume(&mut self) -> Result<ChannelVolumes, Box<dyn crate::Error>> {
         let server: Rc<RefCell<Option<Option<String>>>> = Rc::new(RefCell::new(Some(None)));
         {
             let server = server.clone();
-            let op = self.introspect.get_server_info(move |res| {
+            let op = self.introspect.get_server_info(move |result| {
                 server
                     .borrow_mut()
-                    .replace(res.default_sink_name.as_ref().map(|cow| cow.to_string()));
+                    .replace(result.default_sink_name.as_ref().map(|cow| cow.to_string()));
             });
             self.wait_for_operation(op)?;
         }
+        let default_sink_name = server.borrow_mut().take().flatten().ok_or("")?;
 
-        let result = server.borrow_mut().take().flatten();
-        result.ok_or("".into())
-    }
-
-    fn get_device_by_name(&mut self, name: &str) -> Result<u32, Box<dyn crate::Error>> {
         let device = Rc::new(RefCell::new(None));
         {
-            let dev = device.clone();
+            let device = device.clone();
             let op = self.introspect.get_sink_info_by_name(
-                name,
+                &default_sink_name,
                 move |sink_list: ListResult<&introspect::SinkInfo>| {
                     if let ListResult::Item(item) = sink_list {
-                        dev.borrow_mut().replace(item.index);
+                        device.borrow_mut().replace(item.volume);
                     }
                 },
             );
             self.wait_for_operation(op)?;
         }
-        let mut result = device.borrow_mut();
-        result.take().ok_or("".into())
-    }
-
-    fn get_default_device(&mut self) -> Result<u32, Box<dyn crate::Error>> {
-        let server_info = self.get_server_info();
-        match server_info {
-            Ok(info) => self.get_device_by_name(&info),
-            Err(e) => Err(e),
-        }
-    }
-
-    fn list_devices(&mut self) -> Result<Vec<DeviceInfo>, Box<dyn crate::Error>> {
-        let list = Rc::new(RefCell::new(Vec::new()));
-        {
-            let list = list.clone();
-            let op = self.introspect.get_sink_info_list(
-                move |sink_list: ListResult<&introspect::SinkInfo>| {
-                    if let ListResult::Item(item) = sink_list {
-                        list.borrow_mut().push(item.into());
-                    }
-                },
-            );
-            self.wait_for_operation(op)?;
-        }
-        let result = list.borrow_mut().to_vec();
-        Ok(result)
+        let mut default_device = device.borrow_mut();
+        default_device.take().ok_or("".into())
     }
 }
 
 pub fn audio() -> Result<String, Box<dyn crate::Error>> {
     let mut handler = Handler::new()?;
-    let default_device_index = handler.get_default_device()?;
-    let devices = handler.list_devices()?;
-
-    devices
-        .iter()
-        .find(|dev| dev.index == default_device_index)
-        .map(|dev| {
-            dev.volume
-                .print()
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or("")
-                .replace('%', "")
-        })
-        .ok_or_else(|| "".into())
+    let default_device_volume = handler.get_default_device_volume()?;
+    Ok(default_device_volume
+        .print()
+        .split_whitespace()
+        .nth(1)
+        .ok_or("")?
+        .replace('%', ""))
 }

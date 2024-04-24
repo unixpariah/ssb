@@ -172,11 +172,9 @@ impl Listeners {
                     let mut buffer = [0; 1024];
                     if let Ok(events) = file_listener.inotify.read_events_blocking(&mut buffer) {
                         events.for_each(|event| {
-                            if let Some(tx) = file_listener
-                                .store
-                                // We're always listening to parent changes so unwrap is safe (I hope)
-                                .get(&event.name.unwrap().to_string_lossy().to_string())
-                            {
+                            // We're always listening to parent changes so unwrap is safe (I hope)
+                            let name = event.name.unwrap().to_string_lossy().to_string();
+                            if let Some(tx) = file_listener.store.get(&name) {
                                 _ = tx.send(());
                             }
                         });
@@ -209,7 +207,6 @@ impl Listeners {
                 let mut mainloop = Mainloop::new().unwrap();
                 let mut context = Context::new(&mainloop, "volume-change-listener").unwrap();
                 _ = context.connect(None, ContextFlagSet::NOFLAGS, None);
-
                 _ = mainloop.start();
                 loop {
                     if context.get_state() == libpulse_binding::context::State::Ready {
@@ -247,16 +244,11 @@ impl Listeners {
     pub fn new_file_listener(&mut self, path: &Path) -> broadcast::Receiver<()> {
         let (tx, rx) = broadcast::channel(1);
 
-        self.file_listener
-            .as_mut()
-            .unwrap()
+        let file_listener = self.file_listener.as_mut().unwrap();
+        file_listener
             .store
-            .insert(path.display().to_string(), tx);
-
-        if let Err(e) = self
-            .file_listener
-            .as_mut()
-            .unwrap()
+            .insert(path.file_name().unwrap().to_string_lossy().to_string(), tx);
+        if let Err(e) = file_listener
             .inotify
             .watches()
             .add(path.parent().unwrap(), WatchMask::MODIFY)

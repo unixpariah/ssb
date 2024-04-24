@@ -15,6 +15,9 @@ Ssb is a simple status bar for wlroots based compositors.
 - [x] Workspaces:
     - [x] Hyprland
     - [x] Sway
+- [x] Persistant workspaces
+    - [x] Hyprland
+    - [x] Sway
 - [x] Current window title
     - [x] Hyprland
     - [x] Sway
@@ -25,7 +28,6 @@ Ssb is a simple status bar for wlroots based compositors.
 - [x] CPU average Load
 - [x] Custom scripts
 - [ ] Network
-- [ ] Persistant workspaces
 - [ ] Bluetooth
 - [ ] Date and time
 
@@ -43,32 +45,16 @@ Include this in your configuration.nix
 
 ```nix
     (let
-      pkg = import (fetchTarball {
-        url = "https://github.com/unixpariah/ssb/archive/main.tar.gz";
-      }) {};
-    in
-      pkg.overrideAttrs (oldAttrs: {
-        buildInputs =
-          oldAttrs.buildInputs
-          ++ [libpulseaudio];
-      }))
-```
-
-Or if you want specific github revision
-
-```nix
-    (let
-      pkg = import (fetchGit {
+      ssb =
+        import (pkgs.fetchgit {
         url = "https://github.com/unixpariah/ssb.git";
-        ref = "main";
-        rev = "revision hash";
-      }) {};
+        rev = "457993d799c5ab715122bc6e9f591024270a253d";
+        sha256 = "0y5avhaf9z67h4cp11v2rf8ysn98llba32i5w9fkhk064z9q2216";
+        fetchSubmodules = true;
+    }) {pkgs = pkgs;};
     in
-      pkg.overrideAttrs (oldAttrs: {
-        buildInputs =
-          oldAttrs.buildInputs
-          ++ [libpulseaudio];
-      }))
+      ssb
+    )
 ```
 
 ### The manual way
