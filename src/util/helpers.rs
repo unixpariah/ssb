@@ -149,6 +149,7 @@ title {
 }
 
 persistant_workspaces {
+    letter-spacing: 10px;
     margin-left: 35px;
 }
 "#;

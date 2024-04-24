@@ -1,8 +1,9 @@
-use crate::get_style;
+use crate::{get_style, CSS};
 
 use super::workspaces::{hyprland, sway};
 use css_image::style::Style;
 use image::DynamicImage;
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -75,7 +76,15 @@ pub fn render(css: &HashMap<String, Style>, icons_str: &str) -> DynamicImage {
         })
         .collect::<Vec<_>>();
 
-    let mut persistant_workspaces = css.get("persistant_workspaces").unwrap().clone();
+    let mut persistant_workspaces = css
+        .get("persistant_workspaces")
+        .unwrap_or_else(|| {
+            warn!(
+                "Style declaration for module persistant_workspaces not found, using default style"
+            );
+            CSS.get("persistant_workspaces").unwrap()
+        })
+        .clone();
     let letter_spacing = persistant_workspaces.font.letter_spacing;
     let img_height = icons.iter().map(|icon| icon.height()).max().unwrap() as i32 - 10;
     let img_width = icons.iter().map(|icon| icon.width() as i32).sum::<i32>()
