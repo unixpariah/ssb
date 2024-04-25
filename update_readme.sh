@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-rev=$(git rev-parse HEAD)
+rev=$(nix-prefetch-git https://github.com/unixpariah/ssb.git | grep rev | awk '{print $2 }' | tr -d '",')
 
 sed -i "s/rev = \".*\";/rev = \"$rev\";/" README.md
 

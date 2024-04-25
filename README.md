@@ -1,6 +1,6 @@
-# ssb - Simple status bar
+# Waystatus
 
-Ssb is a simple status bar for wlroots based compositors.
+Waystatus is a simple status bar for wlroots based compositors.
 
 ## Features
 
@@ -33,9 +33,9 @@ Ssb is a simple status bar for wlroots based compositors.
 
 ## Build time dependencies
 
+- rust
 - cairo
 - libpulseaudio
-- rust
 
 ## Installation
 
@@ -45,15 +45,15 @@ Include this in your configuration.nix
 
 ```nix
     (let
-      ssb =
+      waystatus =
         import (pkgs.fetchgit {
-        url = "https://github.com/unixpariah/ssb.git";
+        url = "https://github.com/unixpariah/waystatus.git";
         rev = "3c29f7402295deee9540ce3a5317f3757a9d0932";
         sha256 = "0dhx501c0gwdz64k58n0471pnkq1yjpmdvdvcydpicggbkvk9pg0";
         fetchSubmodules = true;
     }) {pkgs = pkgs;};
     in
-      ssb
+      waystatus
     )
 ```
 
@@ -62,7 +62,7 @@ Include this in your configuration.nix
 1. Clone the repository and cd into it
 
 ```sh
-git clone https://github.com/unixpariah/ssb.git && cd ssb
+git clone https://github.com/unixpariah/waystatus.git && cd waystatus
 ```
 
 2. Install necessary dependencies or use nix flake
@@ -76,11 +76,11 @@ cargo build --release
 4. Run the binary
 
 ```sh
-./target/release/ssb
+./target/release/waystatus
 ```
 
 ## Configuration
 
-The configuration files will be generated at XDG_HOME_CONFIG/ssb/* on first run.
+The configuration files will be generated at XDG_HOME_CONFIG/waystatus/* on first run.
 
 Styling with css is handled by [css-image](https://github.com/unixpariah/css-image) and is currently very limited.

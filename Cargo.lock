@@ -1188,30 +1188,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ssb"
-version = "0.1.0"
-dependencies = [
- "cairo-rs",
- "css-image",
- "dirs",
- "hyprland",
- "image",
- "inotify",
- "lazy_static",
- "libpulse-binding",
- "log",
- "rayon",
- "serde",
- "simplelog",
- "smithay-client-toolkit",
- "swayipc",
- "sysinfo",
- "tokio",
- "toml",
- "wayland-client",
-]
-
-[[package]]
 name = "strum"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1574,6 +1550,30 @@ dependencies = [
  "dlib",
  "log",
  "pkg-config",
+]
+
+[[package]]
+name = "waystatus"
+version = "0.1.0"
+dependencies = [
+ "cairo-rs",
+ "css-image",
+ "dirs",
+ "hyprland",
+ "image",
+ "inotify",
+ "lazy_static",
+ "libpulse-binding",
+ "log",
+ "rayon",
+ "serde",
+ "simplelog",
+ "smithay-client-toolkit",
+ "swayipc",
+ "sysinfo",
+ "tokio",
+ "toml",
+ "wayland-client",
 ]
 
 [[package]]

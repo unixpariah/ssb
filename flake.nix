@@ -26,13 +26,14 @@
             rust-analyzer
             clippy
             libpulseaudio
+            dbus
           ];
         };
       in {
         devShell = rustEnv;
         packages = {
-          ssb = pkgs.stdenv.mkDerivation {
-            name = "ssb";
+          waystatus = pkgs.stdenv.mkDerivation {
+            name = "waystatus";
             src = ./.;
             buildInputs = with pkgs; [rustc cargo];
             buildPhase = ''
@@ -40,7 +41,7 @@
             '';
             installPhase = ''
               mkdir -p $out/bin
-              cp target/release/ssb $out/bin/
+              cp target/release/waystatus $out/bin/
             '';
           };
         };

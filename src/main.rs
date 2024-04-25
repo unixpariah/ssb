@@ -9,7 +9,7 @@ use config::{get_config, get_css, Config};
 use css_image::style::Style;
 use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
-use modules::{custom::Cmd, ModuleData};
+use modules::{custom::Cmd, network, ModuleData};
 use rayon::prelude::*;
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
