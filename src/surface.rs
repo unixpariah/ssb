@@ -60,7 +60,18 @@ impl Surface {
             0,
         );
 
-        canvas.copy_from_slice(&background.to_rgba8());
+        background
+            .to_rgba8()
+            .chunks_exact_mut(4)
+            .enumerate()
+            .for_each(|(i, pixel)| {
+                let offset = i * 4;
+                let alpha = pixel[3] as f32 / 255.0;
+                canvas[offset] = (pixel[0] as f32 * alpha) as u8;
+                canvas[offset + 1] = (pixel[1] as f32 * alpha) as u8;
+                canvas[offset + 2] = (pixel[2] as f32 * alpha) as u8;
+                canvas[offset + 3] = pixel[3];
+            });
 
         let layer = &self.layer_surface;
         layer.wl_surface().damage_buffer(0, 0, width, height);
