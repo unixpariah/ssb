@@ -217,7 +217,9 @@ checksum = "248e3bacc7dc6baa3b21e405ee045c3047101a49145e7e9eca583ab4c2ca5345"
 
 [[package]]
 name = "css-image"
-version = "0.4.1"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aea3f5bcb3cea932b1d6978c9058fe232ccb9a46cc911af8174ba522d00246a"
 dependencies = [
  "cairo-rs",
  "lazy_static",

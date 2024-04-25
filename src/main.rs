@@ -25,7 +25,7 @@ use smithay_client_toolkit::{
         wlr_layer::{Anchor, Layer, LayerShell, LayerShellHandler},
         WaylandSurface,
     },
-    shm::{Shm, ShmHandler},
+    shm::{slot::SlotPool, Shm, ShmHandler},
 };
 use std::{
     collections::HashMap,
@@ -37,7 +37,7 @@ use tokio::sync::broadcast;
 use util::{helpers::TOML_STRING, listeners::Listeners};
 use wayland_client::{
     globals::{registry_queue_init, GlobalList},
-    protocol::wl_output,
+    protocol::{wl_output, wl_shm},
     Connection, QueueHandle,
 };
 
@@ -500,14 +500,27 @@ async fn main() {
                 .par_iter_mut()
                 .map(|surface| {
                     if surface.is_configured() {
-                        return surface
-                            .draw(
-                                &status_bar.config.config,
-                                &status_bar.module_info,
-                                &qh,
-                                &globals,
-                            )
-                            .is_ok();
+                        let width = surface.width;
+                        let height = status_bar.config.config.height;
+                        if let Ok(mut pool) =
+                            SlotPool::new((width * height * 4) as usize, &status_bar.shm)
+                        {
+                            if let Ok((buffer, canvas)) = pool.create_buffer(
+                                width,
+                                height,
+                                width * 4,
+                                wl_shm::Format::Abgr8888,
+                            ) {
+                                return surface
+                                    .draw(
+                                        &status_bar.config.config,
+                                        &status_bar.module_info,
+                                        &buffer,
+                                        canvas,
+                                    )
+                                    .is_ok();
+                            }
+                        }
                     }
                     false
                 })

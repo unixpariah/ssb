@@ -1,13 +1,11 @@
+use crate::{config::Config, util::helpers::combine_images, Position};
 use cairo::{Context, ImageSurface};
 use image::{imageops, DynamicImage};
 use smithay_client_toolkit::{
     output::OutputInfo,
     shell::{wlr_layer::LayerSurface, WaylandSurface},
-    shm::{slot::SlotPool, Shm},
+    shm::slot::Buffer,
 };
-use wayland_client::{globals::GlobalList, protocol::wl_shm, QueueHandle};
-
-use crate::{config::Config, util::helpers::combine_images, Position, StatusBar};
 
 #[derive(Debug)]
 pub struct Surface {
@@ -23,8 +21,8 @@ impl Surface {
         &mut self,
         config: &Config,
         module_info: &[crate::ModuleData],
-        qh: &QueueHandle<StatusBar>,
-        globals: &GlobalList,
+        buffer: &Buffer,
+        canvas: &mut [u8],
     ) -> Result<(), Box<dyn crate::Error>> {
         let width = self.width;
         let height = config.height;
@@ -61,11 +59,6 @@ impl Surface {
             width as i64 - right.width() as i64,
             0,
         );
-
-        let shm = Shm::bind(globals, qh).expect("Couldn't bind to shm");
-        let mut pool = SlotPool::new(width as usize * height as usize * 4, &shm)?;
-        let (buffer, canvas) =
-            pool.create_buffer(width, height, width * 4, wl_shm::Format::Abgr8888)?;
 
         canvas.copy_from_slice(&background.to_rgba8());
 

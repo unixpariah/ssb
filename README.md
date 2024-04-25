@@ -28,8 +28,8 @@ Ssb is a simple status bar for wlroots based compositors.
 - [x] CPU average Load
 - [x] Custom scripts
 - [ ] Network
-- [ ] Bluetooth
 - [ ] Date and time
+- [ ] Bluetooth
 
 ## Build time dependencies
 
