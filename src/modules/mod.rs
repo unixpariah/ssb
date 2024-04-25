@@ -4,6 +4,7 @@ pub mod battery;
 pub mod cpu;
 pub mod custom;
 pub mod memory;
+pub mod network;
 pub mod persistant_workspaces;
 pub mod title;
 pub mod workspaces;

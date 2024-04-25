@@ -48,8 +48,8 @@ Include this in your configuration.nix
       ssb =
         import (pkgs.fetchgit {
         url = "https://github.com/unixpariah/ssb.git";
-        rev = "457993d799c5ab715122bc6e9f591024270a253d";
-        sha256 = "0y5avhaf9z67h4cp11v2rf8ysn98llba32i5w9fkhk064z9q2216";
+        rev = "3c29f7402295deee9540ce3a5317f3757a9d0932";
+        sha256 = "0dhx501c0gwdz64k58n0471pnkq1yjpmdvdvcydpicggbkvk9pg0";
         fetchSubmodules = true;
     }) {pkgs = pkgs;};
     in

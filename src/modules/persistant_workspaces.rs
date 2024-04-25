@@ -86,7 +86,7 @@ pub fn render(css: &HashMap<String, Style>, icons_str: &str) -> DynamicImage {
         })
         .clone();
     let letter_spacing = persistant_workspaces.font.letter_spacing;
-    let img_height = icons.iter().map(|icon| icon.height()).max().unwrap() as i32 - 10;
+    let img_height = icons.iter().map(|icon| icon.height()).max().unwrap_or(10) as i32 - 10;
     let img_width = icons.iter().map(|icon| icon.width() as i32).sum::<i32>()
         + letter_spacing as i32 * (icons.len() as i32 - 1);
     persistant_workspaces.width = Some(img_width);
