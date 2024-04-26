@@ -110,7 +110,7 @@ pub fn render(css: &[Style], icons: &str) -> DynamicImage {
         + letter_spacing as i32 * (icons.len() as i32 - 1);
 
     persistant_workspaces.width = Some(img_width);
-    persistant_workspaces.height = Some(img_height);
+    persistant_workspaces.height = Some(img_height - 10);
 
     let mut x = persistant_workspaces.margin[3] + persistant_workspaces.padding[3];
     let y = persistant_workspaces.margin[2] + persistant_workspaces.padding[2];
@@ -120,7 +120,7 @@ pub fn render(css: &[Style], icons: &str) -> DynamicImage {
         .unwrap()
         .to_rgba8();
     icons.iter().for_each(|icon| {
-        image::imageops::overlay(&mut img, icon, x as i64, y as i64);
+        image::imageops::overlay(&mut img, icon, x as i64, y as i64 - 10);
         x += icon.width() as i32 + letter_spacing as i32;
     });
     DynamicImage::from(img)

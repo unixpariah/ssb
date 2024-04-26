@@ -31,7 +31,7 @@ impl Surface {
             (Vec::new(), Vec::new(), Vec::new()),
             |(mut left_imgs, mut center_imgs, mut right_imgs), info| {
                 let img = &info.cache;
-                match info.position {
+                match info.position.as_ref() {
                     Position::Left => left_imgs.push(img),
                     Position::Center => center_imgs.push(img),
                     Position::Right => right_imgs.push(img),

@@ -9,6 +9,8 @@ pub mod persistant_workspaces;
 pub mod title;
 pub mod workspaces;
 
+use std::sync::Arc;
+
 use self::{
     audio::AudioSettings,
     backlight::{get_backlight_path, BacklightSettings},
@@ -34,11 +36,15 @@ pub struct ModuleData {
     pub format: Box<str>,
     pub receiver: broadcast::Receiver<()>,
     pub cache: DynamicImage,
-    pub position: Position,
+    pub position: Arc<Position>,
 }
 
 impl ModuleData {
-    pub fn new(listeners: &mut Listeners, module: &Module, position: &Position) -> Option<Self> {
+    pub fn new(
+        listeners: &mut Listeners,
+        module: &Module,
+        position: Arc<Position>,
+    ) -> Option<Self> {
         let (receiver, format) = match &module.command {
             Cmd::Workspaces(_) | Cmd::WindowTitle | Cmd::PersistantWorkspaces(_) => {
                 (listeners.new_workspace_listener()?, "%s")
@@ -98,7 +104,7 @@ impl ModuleData {
             format: format.into(),
             receiver,
             cache: DynamicImage::new(0, 0, ColorType::L8),
-            position: position.clone(),
+            position,
         })
     }
 

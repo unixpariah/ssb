@@ -4,7 +4,7 @@ use crate::{
 };
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::{fs, sync::Arc};
 
 pub fn get_css() -> Result<Box<str>, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
@@ -28,7 +28,7 @@ pub fn get_css() -> Result<Box<str>, Box<dyn crate::Error>> {
     Ok(fs::read_to_string(&css_path)?.into())
 }
 
-pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
+pub fn get_config() -> Result<Arc<Config>, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
         Some(dir) => dir,
         None => {
@@ -48,7 +48,7 @@ pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
 
     let config = toml::from_str::<Config>(fs::read_to_string(&config_path)?.trim())?;
 
-    Ok(config)
+    Ok(Arc::new(config))
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]

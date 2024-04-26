@@ -30,7 +30,7 @@ use smithay_client_toolkit::{
 use std::{
     collections::HashMap,
     error::Error,
-    sync::{mpsc, Once},
+    sync::{mpsc, Arc, Once},
 };
 use surface::Surface;
 use tokio::sync::broadcast;
@@ -42,8 +42,8 @@ use wayland_client::{
 };
 
 lazy_static! {
-    pub static ref CSS: Vec<Style> = css_image::parse(CSS_STRING).expect(MESSAGE);
-    pub static ref TOML: Config = toml::from_str(TOML_STRING).expect(MESSAGE);
+    pub static ref CSS: Arc<[Style]> = css_image::parse(CSS_STRING).expect(MESSAGE).into();
+    pub static ref TOML: Arc<Config> = Arc::new(toml::from_str(TOML_STRING).expect(MESSAGE));
 }
 
 #[derive(Clone)]
@@ -70,7 +70,7 @@ struct StatusBar {
 pub struct HotConfig {
     pub css: Vec<Style>,
     pub css_listener: broadcast::Receiver<()>,
-    pub config: Config,
+    pub config: Arc<Config>,
     pub config_listener: broadcast::Receiver<()>,
 }
 
@@ -92,25 +92,27 @@ impl StatusBar {
 
         let css = css_image::parse(&css_str).unwrap_or_else(|_| {
             warn!("CSS could not be parsed, using default styles");
-            CSS.to_owned()
+            CSS.to_owned().to_vec()
         });
 
         let config = get_config().unwrap_or_else(|_| {
             warn!("Config file could not be parsed, using default configuration");
-            TOML.to_owned()
+            TOML.clone()
         });
 
         let mut listeners = Listeners::new();
         let positions = [
-            (Position::Left, &config.modules.left),
-            (Position::Center, &config.modules.center),
-            (Position::Right, &config.modules.right),
+            (Arc::new(Position::Left), &config.modules.left),
+            (Arc::new(Position::Center), &config.modules.center),
+            (Arc::new(Position::Right), &config.modules.right),
         ];
 
         let module_info = positions
             .iter()
             .flat_map(|(position, modules)| modules.iter().map(move |module| (position, module)))
-            .filter_map(|(position, module)| ModuleData::new(&mut listeners, module, position))
+            .filter_map(|(position, module)| {
+                ModuleData::new(&mut listeners, module, position.clone())
+            })
             .collect();
 
         let config_dir = dirs::config_dir().expect("Failed to get config directory");
@@ -148,7 +150,7 @@ impl StatusBar {
 
             self.config.css = css_image::parse(&css_str).unwrap_or_else(|_| {
                 warn!("CSS could not be parsed, using default styles");
-                CSS.to_owned()
+                CSS.to_owned().to_vec()
             });
 
             config_changed = true;
@@ -156,9 +158,8 @@ impl StatusBar {
         if self.config.config_listener.try_recv().is_ok() {
             self.config.config = get_config().unwrap_or_else(|_| {
                 warn!("Config file could not be parsed, using default configuration");
-                TOML.to_owned()
+                TOML.clone()
             });
-            std::mem::take(&mut self.config.config.modules); // Drop it as its not gonna be used in here
             let anchor = match self.config.config.topbar {
                 true => Anchor::TOP,
                 false => Anchor::BOTTOM,
