@@ -26,13 +26,12 @@ use crate::{
 use css_image::style::Style;
 use image::{ColorType, DynamicImage};
 use log::warn;
-use std::collections::HashMap;
 use tokio::sync::broadcast;
 
 pub struct ModuleData {
-    pub output: String,
+    pub output: Box<str>,
     pub command: Cmd,
-    pub format: String,
+    pub format: Box<str>,
     pub receiver: broadcast::Receiver<()>,
     pub cache: DynamicImage,
     pub position: Position,
@@ -94,9 +93,9 @@ impl ModuleData {
         };
 
         Some(ModuleData {
-            output: String::new(),
+            output: "".into(),
             command: module.command.clone(),
-            format: format.to_string(),
+            format: format.into(),
             receiver,
             cache: DynamicImage::new(0, 0, ColorType::L8),
             position: position.clone(),
@@ -104,7 +103,7 @@ impl ModuleData {
     }
 
     pub fn render(&mut self, config_changed: bool, config: &HotConfig) {
-        let output = get_command_output(&self.command).unwrap_or(config.config.unkown.to_string());
+        let output = get_command_output(&self.command).unwrap_or(config.config.unkown.clone());
         if output != self.output || config_changed {
             let format = self.format.replace("%s", &output);
             let format = match &self.command {
@@ -137,7 +136,10 @@ impl ModuleData {
             };
 
             self.cache = match &self.command {
-                Cmd::PersistantWorkspaces(_) => persistant_workspaces::render(&config.css, &output),
+                Cmd::PersistantWorkspaces(_) => {
+                    self.output = output;
+                    persistant_workspaces::render(&config.css, &self.output)
+                }
                 _ => {
                     self.output = output;
                     generic_render(&config.css, name, &format)
@@ -147,11 +149,14 @@ impl ModuleData {
     }
 }
 
-fn generic_render(css: &HashMap<String, Style>, name: &str, format: &str) -> DynamicImage {
+fn generic_render(css: &[Style], name: &str, format: &str) -> DynamicImage {
     let img = get_style(css, name, format).unwrap_or_else(|_| {
-        let mut css = CSS.get(name).expect(MESSAGE).to_owned();
-        css.content = Some(format.to_string());
-        let css: HashMap<String, Style> = [(name.to_string(), css)].iter().cloned().collect();
+        let mut css = CSS
+            .iter()
+            .find(|a| a.selector == name.into())
+            .expect(MESSAGE)
+            .to_owned();
+        css.content = Some(format.into());
         css_image::render(css).expect(MESSAGE)
     });
 
@@ -163,9 +168,12 @@ fn generic_render(css: &HashMap<String, Style>, name: &str, format: &str) -> Dyn
         }
         None => {
             warn!("Failed to parse {name} module css, using default style");
-            let mut css = CSS.get(name).expect(MESSAGE).to_owned();
-            css.content = Some(format.to_string());
-            let css: HashMap<String, Style> = [(name.to_string(), css)].iter().cloned().collect();
+            let mut css = CSS
+                .iter()
+                .find(|a| a.selector == name.into())
+                .expect(MESSAGE)
+                .to_owned();
+            css.content = Some(format.into());
             let css = css_image::render(css).expect(MESSAGE);
             image::load_from_memory(css.get(name).expect(MESSAGE)).unwrap()
         }

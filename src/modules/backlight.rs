@@ -5,7 +5,7 @@ use std::error::Error;
 pub struct BacklightSettings {
     pub formatting: String,
     #[serde(default)]
-    pub icons: Vec<String>,
+    pub icons: Vec<Box<str>>,
 }
 
 pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>> {
@@ -24,7 +24,7 @@ pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>>
     Ok(backlight_path.path())
 }
 
-pub fn backlight_details() -> Result<String, Box<dyn Error>> {
+pub fn backlight_details() -> Result<Box<str>, Box<dyn Error>> {
     let path = get_backlight_path()?;
 
     let brightness = std::fs::read_to_string(path.join("brightness"))?
@@ -34,7 +34,7 @@ pub fn backlight_details() -> Result<String, Box<dyn Error>> {
         .trim()
         .parse::<f32>()?;
 
-    Ok(((brightness / max_brightness) * 100.0).to_string())
+    Ok(((brightness / max_brightness) * 100.0).to_string().into())
 }
 
 #[cfg(test)]

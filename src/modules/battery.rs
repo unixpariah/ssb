@@ -5,7 +5,7 @@ use std::error::Error;
 pub struct BatterySettings {
     pub formatting: String,
     #[serde(default)]
-    pub icons: Vec<String>,
+    pub icons: Vec<Box<str>>,
     pub interval: u64,
 }
 
@@ -15,7 +15,7 @@ pub enum BatteryOpts {
     Status,
 }
 
-pub fn battery_details() -> Result<String, Box<dyn Error>> {
+pub fn battery_details() -> Result<Box<str>, Box<dyn Error>> {
     let mut dirs = std::fs::read_dir("/sys/class/power_supply")?;
     let path = dirs
         .find(|entry| {
@@ -30,7 +30,7 @@ pub fn battery_details() -> Result<String, Box<dyn Error>> {
 
     let capacity = std::fs::read_to_string(path.path().join("capacity"))?
         .trim()
-        .to_string();
+        .into();
 
     Ok(capacity)
 }

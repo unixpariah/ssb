@@ -6,11 +6,11 @@ pub fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
     let mut new_img = ImageBuffer::new(total_width, max_height);
     images.iter().fold(0, |acc, img| {
         let (width, height) = img.dimensions();
-        let y_start = max_height - height;
+        let y_start = max_height - height; // calculate the starting y-coordinate
         (0..width).for_each(|x| {
             (0..height).for_each(|y| {
                 let pixel = img.get_pixel(x, y);
-                new_img.put_pixel(x + acc, y + y_start, pixel);
+                new_img.put_pixel(x + acc, y + y_start, pixel); // add the starting y-coordinate
             });
         });
         acc + width

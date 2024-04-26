@@ -98,7 +98,7 @@ pub struct TimeListenerData {
 }
 
 pub struct FileListenerData {
-    store: HashMap<String, broadcast::Sender<()>>,
+    store: HashMap<Box<str>, broadcast::Sender<()>>,
     inotify: Inotify,
 }
 
@@ -174,7 +174,7 @@ impl Listeners {
                         events.for_each(|event| {
                             // We're always listening to parent changes so unwrap is safe (I hope)
                             let name = event.name.unwrap().to_string_lossy().to_string();
-                            if let Some(tx) = file_listener.store.get(&name) {
+                            if let Some(tx) = file_listener.store.get(&*name) {
                                 _ = tx.send(());
                             }
                         });
@@ -247,7 +247,7 @@ impl Listeners {
         let file_listener = self.file_listener.as_mut().unwrap();
         file_listener
             .store
-            .insert(path.file_name().unwrap().to_string_lossy().to_string(), tx);
+            .insert(path.file_name().unwrap().to_string_lossy().into(), tx);
         if let Err(e) = file_listener
             .inotify
             .watches()

@@ -6,7 +6,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-pub fn get_css() -> Result<String, Box<dyn crate::Error>> {
+pub fn get_css() -> Result<Box<str>, Box<dyn crate::Error>> {
     let config_dir = match dirs::config_dir() {
         Some(dir) => dir,
         None => {
@@ -25,7 +25,7 @@ pub fn get_css() -> Result<String, Box<dyn crate::Error>> {
         _ = fs::write(&css_path, CSS_STRING);
     }
 
-    Ok(fs::read_to_string(&css_path)?)
+    Ok(fs::read_to_string(&css_path)?.into())
 }
 
 pub fn get_config() -> Result<Config, Box<dyn crate::Error>> {
@@ -61,13 +61,13 @@ pub struct PositionedModules {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Config {
     #[serde(default = "unkown")]
-    pub unkown: String,
+    pub unkown: Box<str>,
     #[serde(default = "background")]
     pub background: [f64; 4],
     #[serde(default = "topbar")]
     pub topbar: bool,
     #[serde(default = "layer")]
-    pub layer: String,
+    pub layer: Box<str>,
     #[serde(default = "height")]
     pub height: i32,
     #[serde(default)]
@@ -76,12 +76,12 @@ pub struct Config {
     pub modules: PositionedModules,
 }
 
-fn layer() -> String {
-    "overlay".to_string()
+fn layer() -> Box<str> {
+    "overlay".into()
 }
 
-fn unkown() -> String {
-    "N/A".to_string()
+fn unkown() -> Box<str> {
+    "N/A".into()
 }
 
 fn background() -> [f64; 4] {
@@ -112,7 +112,7 @@ fn pos() -> f64 {
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct Font {
     #[serde(default = "family")]
-    pub family: String,
+    pub family: Box<str>,
     #[serde(default = "size")]
     pub size: f64,
     #[serde(default = "bold")]
@@ -121,8 +121,8 @@ pub struct Font {
     pub color: [u8; 3],
 }
 
-fn family() -> String {
-    "JetBrainsMono Nerd Font".to_string()
+fn family() -> Box<str> {
+    "JetBrainsMono Nerd Font".into()
 }
 
 fn size() -> f64 {
@@ -166,12 +166,12 @@ mod tests {
     #[test]
     fn test_font() {
         let font = Font {
-            family: "Fira Code".to_string(),
+            family: "Fira Code".into(),
             size: 14.0,
             bold: false,
             color: [0, 0, 0],
         };
-        assert_eq!(font.family, "Fira Code");
+        assert_eq!(&*font.family, "Fira Code");
         assert_eq!(font.size, 14.0);
         assert!(!font.bold);
         assert_eq!(font.color, [0, 0, 0]);
@@ -181,8 +181,8 @@ mod tests {
     fn test_module() {
         let module = Module {
             command: Cmd::Workspaces(WorkspacesIcons {
-                active: "".to_string(),
-                inactive: "".to_string(),
+                active: "".into(),
+                inactive: "".into(),
             }),
             x: 0.0,
             y: 0.0,
@@ -190,8 +190,8 @@ mod tests {
         assert_eq!(
             module.command,
             Cmd::Workspaces(WorkspacesIcons {
-                active: "".to_string(),
-                inactive: "".to_string(),
+                active: "".into(),
+                inactive: "".into(),
             }),
         );
         assert_eq!(module.x, 0.0);

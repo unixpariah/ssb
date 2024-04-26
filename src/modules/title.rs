@@ -1,11 +1,11 @@
 use hyprland::shared::HyprDataActiveOptional;
 
-pub fn get_window_title() -> Option<String> {
+pub fn get_window_title() -> Option<Box<str>> {
     let hyprland_running = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok();
     let sway_running = std::env::var("SWAYSOCK").is_ok();
 
     match (hyprland_running, sway_running) {
-        (true, _) => Some(hyprland::data::Client::get_active().ok()??.title),
+        (true, _) => Some(hyprland::data::Client::get_active().ok()??.title.into()),
         (_, true) => {
             let workspaces = swayipc::Connection::new().ok()?.get_workspaces().ok()?;
             let active_workspace = workspaces.iter().enumerate().find_map(|(i, workspace)| {
@@ -16,7 +16,13 @@ pub fn get_window_title() -> Option<String> {
                 }
             })?;
 
-            Some(active_workspace.as_str().replace(']', "").replace("H[", ""))
+            Some(
+                active_workspace
+                    .as_str()
+                    .replace(']', "")
+                    .replace("H[", "")
+                    .into(),
+            )
         }
         _ => None,
     }

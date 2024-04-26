@@ -42,7 +42,7 @@ use wayland_client::{
 };
 
 lazy_static! {
-    pub static ref CSS: HashMap<String, Style> = css_image::parse(CSS_STRING).expect(MESSAGE);
+    pub static ref CSS: Vec<Style> = css_image::parse(CSS_STRING).expect(MESSAGE);
     pub static ref TOML: Config = toml::from_str(TOML_STRING).expect(MESSAGE);
 }
 
@@ -68,7 +68,7 @@ struct StatusBar {
 }
 
 pub struct HotConfig {
-    pub css: HashMap<String, Style>,
+    pub css: Vec<Style>,
     pub css_listener: broadcast::Receiver<()>,
     pub config: Config,
     pub config_listener: broadcast::Receiver<()>,
@@ -87,7 +87,7 @@ impl StatusBar {
             CompositorState::bind(globals, qh).expect("Failed to bind compositor");
         let layer_shell = LayerShell::bind(globals, qh).expect("Failed to bind layer shell.");
         let shm = Shm::bind(globals, qh).expect("Failed to bind shm");
-        let css_str = get_css().unwrap_or("".to_string());
+        let css_str = get_css().unwrap_or("".into());
         let seat_state = SeatState::new(globals, qh);
 
         let css = css_image::parse(&css_str).unwrap_or_else(|_| {
@@ -144,7 +144,7 @@ impl StatusBar {
     fn reload_config(&mut self) {
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
-            let css_str = get_css().unwrap_or("".to_string());
+            let css_str = get_css().unwrap_or("".into());
 
             self.config.css = css_image::parse(&css_str).unwrap_or_else(|_| {
                 warn!("CSS could not be parsed, using default styles");
@@ -168,7 +168,7 @@ impl StatusBar {
                 surface.layer_surface.set_anchor(anchor);
                 surface
                     .layer_surface
-                    .set_layer(match self.config.config.layer.as_str() {
+                    .set_layer(match &*self.config.config.layer {
                         "overlay" => Layer::Overlay,
                         "background" => Layer::Background,
                         _ => Layer::Overlay,
@@ -193,31 +193,35 @@ impl StatusBar {
 }
 
 fn get_style(
-    css: &HashMap<String, Style>,
+    css: &[Style],
     name: &str,
     format: &str,
-) -> Result<HashMap<String, Vec<u8>>, Box<dyn Error + Sync + Send>> {
-    let mut styles = HashMap::new();
-    match css.get(name).or_else(|| css.get("*")) {
-        Some(style) => {
-            let mut style = style.clone();
-            style.content = Some(format.to_string());
-            styles.insert(name.to_string(), style);
+) -> Result<HashMap<Box<str>, Vec<u8>>, Box<dyn Error + Sync + Send>> {
+    let styles = if !css.iter().any(|style| style.selector == name.into())
+        && css.iter().any(|a| a.selector == "*".into())
+    {
+        css.iter()
+            .find(|style| style.selector == "*".into())
+            .cloned()
+    } else {
+        css.iter()
+            .find(|style| style.selector == name.into())
+            .cloned()
+    };
+
+    match styles {
+        Some(mut style) => {
+            style.content = Some(format.into());
+            css_image::render(style).map_err(|_| {
+                warn!("Failed to parse {name} module css, using default style");
+                "".into()
+            })
         }
         None => {
             warn!("Style declaration for module {name} not found, using default style");
-            return Err("".into());
+            Err("".into())
         }
-    };
-
-    if css.get("*").is_some() && css.get(name).is_none() {
-        styles.insert("*".to_string(), css.get("*").unwrap().clone());
     }
-
-    css_image::render(styles).map_err(|_| {
-        warn!("Failed to parse {name} module css, using default style");
-        "".into()
-    })
 }
 
 impl OutputHandler for StatusBar {
@@ -236,7 +240,7 @@ impl OutputHandler for StatusBar {
         let layer = self.layer_shell.create_layer_surface(
             qh,
             surface,
-            match config.layer.as_str() {
+            match &*config.layer {
                 "overlay" => Layer::Overlay,
                 "background" => Layer::Background,
                 _ => Layer::Overlay,

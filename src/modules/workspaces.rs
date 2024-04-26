@@ -6,11 +6,11 @@ use std::error::Error;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct WorkspacesIcons {
-    pub active: String,
-    pub inactive: String,
+    pub active: Box<str>,
+    pub inactive: Box<str>,
 }
 
-pub fn workspaces(workspace: &WorkspacesIcons) -> String {
+pub fn workspaces(workspace: &WorkspacesIcons) -> Box<str> {
     let hyprland_running = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok();
     let sway_running = std::env::var("SWAYSOCK").is_ok();
 
@@ -21,18 +21,20 @@ pub fn workspaces(workspace: &WorkspacesIcons) -> String {
     }
     .unwrap();
 
-    (0..length).fold(String::new(), |mut workspace_state, i| {
-        let workspace = if i == active_workspace - 1 || i == length - 1 && active_workspace > length
-        {
-            &workspace.active
-        } else {
-            &workspace.inactive
-        };
-        workspace_state.push_str(workspace);
-        workspace_state.push(' ');
+    (0..length)
+        .fold(String::new(), |mut workspace_state, i| {
+            let workspace =
+                if i == active_workspace - 1 || i == length - 1 && active_workspace > length {
+                    &workspace.active
+                } else {
+                    &workspace.inactive
+                };
+            workspace_state.push_str(workspace);
+            workspace_state.push(' ');
 
-        workspace_state
-    })
+            workspace_state
+        })
+        .into()
 }
 
 pub fn hyprland() -> Result<(usize, usize), Box<dyn Error>> {

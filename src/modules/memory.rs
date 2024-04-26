@@ -18,7 +18,7 @@ pub enum MemoryOpts {
     PercFree,
 }
 
-pub fn memory_usage(opt: &MemoryOpts) -> Result<String, Box<dyn Error>> {
+pub fn memory_usage(opt: &MemoryOpts) -> Result<Box<str>, Box<dyn Error>> {
     let mut system = System::new();
     system.refresh_memory();
     let free = system.free_memory() as f64;

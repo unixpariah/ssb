@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub struct AudioSettings {
     pub formatting: String,
     #[serde(default)]
-    pub icons: Vec<String>,
+    pub icons: Vec<Box<str>>,
 }
 
 struct Handler {
@@ -101,13 +101,16 @@ impl Handler {
     }
 
     fn get_default_device_volume(&mut self) -> Result<ChannelVolumes, Box<dyn crate::Error>> {
-        let server: Rc<RefCell<Option<Option<String>>>> = Rc::new(RefCell::new(Some(None)));
+        let server: Rc<RefCell<Option<Option<Box<str>>>>> = Rc::new(RefCell::new(None));
         {
             let server = server.clone();
             let op = self.introspect.get_server_info(move |result| {
-                server
-                    .borrow_mut()
-                    .replace(result.default_sink_name.as_ref().map(|cow| cow.to_string()));
+                server.borrow_mut().replace(
+                    result
+                        .default_sink_name
+                        .as_ref()
+                        .map(|cow| cow.as_ref().into()),
+                );
             });
             self.wait_for_operation(op)?;
         }
@@ -131,7 +134,7 @@ impl Handler {
     }
 }
 
-pub fn audio() -> Result<String, Box<dyn crate::Error>> {
+pub fn audio() -> Result<Box<str>, Box<dyn crate::Error>> {
     let mut handler = Handler::new()?;
     let default_device_volume = handler.get_default_device_volume()?;
     Ok(default_device_volume
@@ -139,5 +142,6 @@ pub fn audio() -> Result<String, Box<dyn crate::Error>> {
         .split_whitespace()
         .nth(1)
         .ok_or("")?
-        .replace('%', ""))
+        .replace('%', "")
+        .into())
 }

@@ -46,18 +46,23 @@ impl Surface {
         let right = combine_images(&right_imgs);
 
         let mut background = self.background.clone(); // Can't overwrite the background so we clone it
-        imageops::overlay(&mut background, &left, 0, 0);
+        imageops::overlay(
+            &mut background,
+            &left,
+            0,
+            height as i64 - left.height() as i64,
+        );
         imageops::overlay(
             &mut background,
             &center,
             width as i64 / 2 - center.width() as i64 / 2,
-            0,
+            height as i64 - center.height() as i64,
         );
         imageops::overlay(
             &mut background,
             &right,
             width as i64 - right.width() as i64,
-            0,
+            height as i64 - right.height() as i64,
         );
 
         background
