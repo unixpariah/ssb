@@ -138,9 +138,11 @@ impl ModuleData {
 
             self.cache = match &self.command {
                 Cmd::PersistantWorkspaces(_) => persistant_workspaces::render(&config.css, &output),
-                _ => generic_render(&config.css, name, &format),
+                _ => {
+                    self.output = output;
+                    generic_render(&config.css, name, &format)
+                }
             };
-            self.output = output;
         }
     }
 }

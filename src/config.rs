@@ -63,7 +63,7 @@ pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: String,
     #[serde(default = "background")]
-    pub background: [u8; 4],
+    pub background: [f64; 4],
     #[serde(default = "topbar")]
     pub topbar: bool,
     #[serde(default = "layer")]
@@ -84,8 +84,8 @@ fn unkown() -> String {
     "N/A".to_string()
 }
 
-fn background() -> [u8; 4] {
-    [20, 15, 33, 255]
+fn background() -> [f64; 4] {
+    [20., 15., 33., 1.]
 }
 
 fn topbar() -> bool {

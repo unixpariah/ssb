@@ -9,7 +9,7 @@ use config::{get_config, get_css, Config};
 use css_image::style::Style;
 use lazy_static::lazy_static;
 use log::{info, warn, LevelFilter};
-use modules::{custom::Cmd, network, ModuleData};
+use modules::{custom::Cmd, ModuleData};
 use rayon::prelude::*;
 use simplelog::{ColorChoice, TermLogger, TerminalMode, ThreadLogMode};
 use smithay_client_toolkit::{
@@ -268,10 +268,10 @@ impl OutputHandler for StatusBar {
                 let context = Context::new(&img_surface).unwrap();
                 let background = config.background;
                 context.set_source_rgba(
-                    background[0] as f64 / 255.0,
-                    background[1] as f64 / 255.0,
-                    background[2] as f64 / 255.0,
-                    background[3] as f64 / 255.0,
+                    background[0] / 255.0,
+                    background[1] / 255.0,
+                    background[2] / 255.0,
+                    background[3],
                 );
                 _ = context.paint();
                 let mut background = Vec::new();

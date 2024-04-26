@@ -89,10 +89,10 @@ impl Surface {
         let context = Context::new(&img_surface).unwrap();
         let background = config.background;
         context.set_source_rgba(
-            background[0] as f64 / 255.0,
-            background[1] as f64 / 255.0,
-            background[2] as f64 / 255.0,
-            background[3] as f64 / 255.0,
+            background[0] / 255.0,
+            background[1] / 255.0,
+            background[2] / 255.0,
+            background[3],
         );
         _ = context.paint();
         let mut background = Vec::new();

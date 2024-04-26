@@ -6,10 +6,11 @@ pub fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
     let mut new_img = ImageBuffer::new(total_width, max_height);
     images.iter().fold(0, |acc, img| {
         let (width, height) = img.dimensions();
+        let y_start = max_height - height;
         (0..width).for_each(|x| {
             (0..height).for_each(|y| {
                 let pixel = img.get_pixel(x, y);
-                new_img.put_pixel(x + acc, y, pixel);
+                new_img.put_pixel(x + acc, y + y_start, pixel);
             });
         });
         acc + width
@@ -20,7 +21,7 @@ pub fn combine_images(images: &[&image::DynamicImage]) -> image::DynamicImage {
 
 pub const TOML_STRING: &str = r#"
 unkown = "N/A" # Default value for unknown commands
-background = [20, 15, 33, 255] # Background color as RGB value
+background = [20, 15, 33, 1] # Background color as RGB value
 topbar = true # true for bar at top of the screen, false for bar at bottom of the screen
 height = 40 # Height of the bar
 
@@ -117,6 +118,7 @@ pub const CSS_STRING: &str = r#"
     font-weight: bold;
     color: #ffffff;
     margin-top: 10px;
+    background-color: rgba(0, 0, 0, 0);
 }
 
 backlight {
