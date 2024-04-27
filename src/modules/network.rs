@@ -1,3 +1,3 @@
-pub fn get_network() -> Result<(), Box<dyn std::error::Error>> {
+pub fn get_network() -> anyhow::Result<()> {
     Ok(())
 }

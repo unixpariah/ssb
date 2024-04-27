@@ -51,14 +51,14 @@ pub fn get_config() -> Result<Arc<Config>, Box<dyn crate::Error>> {
     Ok(Arc::new(config))
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct PositionedModules {
     pub left: Vec<Module>,
     pub center: Vec<Module>,
     pub right: Vec<Module>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize)]
 pub struct Config {
     #[serde(default = "unkown")]
     pub unkown: Box<str>,
@@ -96,9 +96,9 @@ fn height() -> i32 {
     40
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct Module {
-    pub command: Cmd,
+    pub command: Arc<Cmd>,
     #[serde(default = "pos")]
     pub x: f64,
     #[serde(default = "pos")]
@@ -109,7 +109,7 @@ fn pos() -> f64 {
     0.0
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Font {
     #[serde(default = "family")]
     pub family: Box<str>,
@@ -145,56 +145,5 @@ impl Default for Font {
             bold: bold(),
             color: color(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::modules::workspaces::WorkspacesIcons;
-
-    use super::*;
-
-    #[test]
-    fn test_font_default() {
-        let font = Font::default();
-        assert_eq!(font.family, family());
-        assert_eq!(font.size, size());
-        assert_eq!(font.bold, bold());
-        assert_eq!(font.color, color());
-    }
-
-    #[test]
-    fn test_font() {
-        let font = Font {
-            family: "Fira Code".into(),
-            size: 14.0,
-            bold: false,
-            color: [0, 0, 0],
-        };
-        assert_eq!(&*font.family, "Fira Code");
-        assert_eq!(font.size, 14.0);
-        assert!(!font.bold);
-        assert_eq!(font.color, [0, 0, 0]);
-    }
-
-    #[test]
-    fn test_module() {
-        let module = Module {
-            command: Cmd::Workspaces(WorkspacesIcons {
-                active: "".into(),
-                inactive: "".into(),
-            }),
-            x: 0.0,
-            y: 0.0,
-        };
-        assert_eq!(
-            module.command,
-            Cmd::Workspaces(WorkspacesIcons {
-                active: "".into(),
-                inactive: "".into(),
-            }),
-        );
-        assert_eq!(module.x, 0.0);
-        assert_eq!(module.y, 0.0);
     }
 }

@@ -5,24 +5,23 @@ pub fn get_window_title() -> Option<Box<str>> {
     let sway_running = std::env::var("SWAYSOCK").is_ok();
 
     match (hyprland_running, sway_running) {
-        (true, _) => Some(hyprland::data::Client::get_active().ok()??.title.into()),
+        (true, _) => Some(
+            hyprland::data::Client::get_active()
+                .ok()??
+                .initial_title
+                .into(),
+        ),
         (_, true) => {
-            let workspaces = swayipc::Connection::new().ok()?.get_workspaces().ok()?;
-            let active_workspace = workspaces.iter().enumerate().find_map(|(i, workspace)| {
+            let mut workspaces = swayipc::Connection::new().ok()?.get_workspaces().ok()?;
+            let active_workspace = workspaces.iter_mut().find_map(|workspace| {
                 if workspace.focused {
-                    workspaces[i].representation.clone()
+                    workspace.representation.take()
                 } else {
                     None
                 }
             })?;
 
-            Some(
-                active_workspace
-                    .as_str()
-                    .replace(']', "")
-                    .replace("H[", "")
-                    .into(),
-            )
+            Some(active_workspace.replace(']', "").replace("H[", "").into())
         }
         _ => None,
     }

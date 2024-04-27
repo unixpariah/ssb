@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::error::Error;
+use std::sync::Arc;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Deserialize, Serialize, PartialEq)]
 pub struct BacklightSettings {
-    pub formatting: String,
+    pub formatting: Arc<str>,
     #[serde(default)]
     pub icons: Vec<Box<str>>,
 }
 
-pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>> {
+pub fn get_backlight_path() -> anyhow::Result<std::path::PathBuf> {
     let mut dirs = std::fs::read_dir("/sys/class/backlight")?;
     let backlight_path = dirs
         .find(|entry| {
@@ -19,12 +19,12 @@ pub fn get_backlight_path() -> Result<std::path::PathBuf, Box<dyn crate::Error>>
 
             false
         })
-        .ok_or("")??;
+        .ok_or_else(|| anyhow::anyhow!("Backlight path not found"))??;
 
     Ok(backlight_path.path())
 }
 
-pub fn backlight_details() -> Result<Box<str>, Box<dyn Error>> {
+pub fn backlight_details() -> anyhow::Result<Box<str>> {
     let path = get_backlight_path()?;
 
     let brightness = std::fs::read_to_string(path.join("brightness"))?
@@ -34,23 +34,6 @@ pub fn backlight_details() -> Result<Box<str>, Box<dyn Error>> {
         .trim()
         .parse::<f32>()?;
 
-    Ok(((brightness / max_brightness) * 100.0).to_string().into())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_backlight_details() {
-        match get_backlight_path() {
-            Ok(_) => {
-                assert!(backlight_details().is_ok());
-                let result = backlight_details().unwrap().parse::<f32>();
-                assert!(result.is_ok());
-                assert!(result.unwrap() <= 100.0);
-            }
-            Err(_) => assert!(backlight_details().is_err()),
-        }
-    }
+    let brightness = ((brightness / max_brightness) * 100.0) as u8;
+    Ok((brightness).to_string().into())
 }

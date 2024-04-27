@@ -2,9 +2,8 @@ use hyprland::shared::HyprData;
 use hyprland::shared::HyprDataActive;
 use serde::Deserialize;
 use serde::Serialize;
-use std::error::Error;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Deserialize, Serialize, PartialEq)]
 pub struct WorkspacesIcons {
     pub active: Box<str>,
     pub inactive: Box<str>,
@@ -37,14 +36,14 @@ pub fn workspaces(workspace: &WorkspacesIcons) -> Box<str> {
         .into()
 }
 
-pub fn hyprland() -> Result<(usize, usize), Box<dyn Error>> {
+pub fn hyprland() -> anyhow::Result<(usize, usize)> {
     let active_workspace = hyprland::data::Workspace::get_active()?.id as usize;
     let length = hyprland::data::Workspaces::get()?.iter().count();
 
     Ok((active_workspace, length))
 }
 
-pub fn sway() -> Result<(usize, usize), Box<dyn Error>> {
+pub fn sway() -> anyhow::Result<(usize, usize)> {
     let workspaces = swayipc::Connection::new()?.get_workspaces()?;
 
     let active_workspace = workspaces
@@ -57,7 +56,7 @@ pub fn sway() -> Result<(usize, usize), Box<dyn Error>> {
                 None
             }
         })
-        .ok_or("")?;
+        .ok_or_else(|| anyhow::anyhow!("Focused workspace not found"))?;
 
     Ok((active_workspace, workspaces.len()))
 }

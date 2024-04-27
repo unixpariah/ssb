@@ -1,21 +1,21 @@
 use serde::{Deserialize, Serialize};
-use std::error::Error;
+use std::sync::Arc;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Deserialize, Serialize, PartialEq)]
 pub struct BatterySettings {
-    pub formatting: String,
+    pub formatting: Arc<str>,
     #[serde(default)]
     pub icons: Vec<Box<str>>,
     pub interval: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub enum BatteryOpts {
     Capacity,
     Status,
 }
 
-pub fn battery_details() -> Result<Box<str>, Box<dyn Error>> {
+pub fn battery_details() -> anyhow::Result<Box<str>> {
     let mut dirs = std::fs::read_dir("/sys/class/power_supply")?;
     let path = dirs
         .find(|entry| {
@@ -26,7 +26,7 @@ pub fn battery_details() -> Result<Box<str>, Box<dyn Error>> {
 
             false
         })
-        .ok_or("")??;
+        .ok_or_else(|| anyhow::anyhow!("Battery not found"))??;
 
     let capacity = std::fs::read_to_string(path.path().join("capacity"))?
         .trim()

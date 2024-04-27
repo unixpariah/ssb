@@ -16,7 +16,7 @@ use std::{
 use swayipc::EventType;
 use tokio::sync::broadcast;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq)]
 pub enum Trigger {
     WorkspaceChanged,
     TimePassed(u64),
@@ -90,7 +90,6 @@ impl WorkspaceListenerData {
     }
 }
 
-#[derive(Debug)]
 pub struct TimeListenerData {
     tx: broadcast::Sender<()>,
     interval: u64,
@@ -173,7 +172,7 @@ impl Listeners {
                     if let Ok(events) = file_listener.inotify.read_events_blocking(&mut buffer) {
                         events.for_each(|event| {
                             // We're always listening to parent changes so unwrap is safe (I hope)
-                            let name = event.name.unwrap().to_string_lossy().to_string();
+                            let name = event.name.unwrap().to_string_lossy();
                             if let Some(tx) = file_listener.store.get(&*name) {
                                 _ = tx.send(());
                             }

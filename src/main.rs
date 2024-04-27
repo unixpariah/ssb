@@ -46,7 +46,6 @@ lazy_static! {
     pub static ref TOML: Arc<Config> = Arc::new(toml::from_str(TOML_STRING).expect(MESSAGE));
 }
 
-#[derive(Clone)]
 enum Position {
     Left,
     Center,
@@ -92,7 +91,7 @@ impl StatusBar {
 
         let css = css_image::parse(&css_str).unwrap_or_else(|_| {
             warn!("CSS could not be parsed, using default styles");
-            CSS.to_owned().to_vec()
+            CSS.clone().to_vec()
         });
 
         let config = get_config().unwrap_or_else(|_| {
@@ -150,7 +149,7 @@ impl StatusBar {
 
             self.config.css = css_image::parse(&css_str).unwrap_or_else(|_| {
                 warn!("CSS could not be parsed, using default styles");
-                CSS.to_owned().to_vec()
+                CSS.clone().to_vec()
             });
 
             config_changed = true;
@@ -193,36 +192,28 @@ impl StatusBar {
     }
 }
 
-fn get_style(
-    css: &[Style],
-    name: &str,
-    format: &str,
-) -> Result<HashMap<Box<str>, Vec<u8>>, Box<dyn Error + Sync + Send>> {
-    let styles = if !css.iter().any(|style| style.selector == name.into())
-        && css.iter().any(|a| a.selector == "*".into())
+fn get_style(css: &[Style], name: &str, format: &str) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    let styles = if !css.iter().any(|style| style.selector == name)
+        && css.iter().any(|a| a.selector == "*")
     {
-        css.iter()
-            .find(|style| style.selector == "*".into())
-            .cloned()
+        css.iter().find(|style| style.selector == "*").cloned()
     } else {
-        css.iter()
-            .find(|style| style.selector == name.into())
-            .cloned()
+        css.iter().find(|style| style.selector == name).cloned()
     };
 
-    match styles {
-        Some(mut style) => {
-            style.content = Some(format.into());
-            css_image::render(style).map_err(|_| {
-                warn!("Failed to parse {name} module css, using default style");
-                "".into()
-            })
-        }
-        None => {
-            warn!("Style declaration for module {name} not found, using default style");
-            Err("".into())
-        }
+    if let Some(mut style) = styles {
+        style.selector = name.into();
+        style.content.replace(format.into());
+        return css_image::render(style).map_err(|_| {
+            warn!("Failed to parse {name} module css, using default style");
+            anyhow::anyhow!("Failed to parse {name} module css, using default style")
+        });
     }
+
+    warn!("Style declaration for module {name} not found, using default style");
+    Err(anyhow::anyhow!(
+        "Style declaration for module {name} not found, using default style"
+    ))
 }
 
 impl OutputHandler for StatusBar {
@@ -281,7 +272,9 @@ impl OutputHandler for StatusBar {
                 _ = context.paint();
                 let mut background = Vec::new();
                 _ = img_surface.write_to_png(&mut background);
-                let background = image::load_from_memory(&background).unwrap();
+                let Ok(background) = image::load_from_memory(&background) else {
+                    panic!("Failed to create background image");
+                };
 
                 self.surfaces.push(Surface {
                     output_info: info,

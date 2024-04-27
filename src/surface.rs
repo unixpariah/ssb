@@ -7,7 +7,6 @@ use smithay_client_toolkit::{
     shm::slot::Buffer,
 };
 
-#[derive(Debug)]
 pub struct Surface {
     pub output_info: OutputInfo,
     pub layer_surface: LayerSurface,
@@ -23,7 +22,7 @@ impl Surface {
         module_info: &[crate::ModuleData],
         buffer: &Buffer,
         canvas: &mut [u8],
-    ) -> Result<(), Box<dyn crate::Error>> {
+    ) -> anyhow::Result<()> {
         let width = self.width;
         let height = config.height;
 

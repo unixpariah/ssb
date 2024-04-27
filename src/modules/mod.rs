@@ -9,7 +9,7 @@ pub mod persistant_workspaces;
 pub mod title;
 pub mod workspaces;
 
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use self::{
     audio::AudioSettings,
@@ -32,8 +32,8 @@ use tokio::sync::broadcast;
 
 pub struct ModuleData {
     pub output: Box<str>,
-    pub command: Cmd,
-    pub format: Box<str>,
+    pub command: Arc<Cmd>,
+    pub format: Arc<str>,
     pub receiver: broadcast::Receiver<()>,
     pub cache: DynamicImage,
     pub position: Arc<Position>,
@@ -45,14 +45,16 @@ impl ModuleData {
         module: &Module,
         position: Arc<Position>,
     ) -> Option<Self> {
-        let (receiver, format) = match &module.command {
+        let (receiver, format) = match &module.command.deref() {
             Cmd::Workspaces(_) | Cmd::WindowTitle | Cmd::PersistantWorkspaces(_) => {
-                (listeners.new_workspace_listener()?, "%s")
+                let formatting: Arc<str> = Arc::from("%s");
+                (listeners.new_workspace_listener()?, formatting.clone())
             }
             Cmd::Memory(MemorySettings { .. })
             | Cmd::Cpu(CpuSettings { .. })
             | Cmd::Battery(BatterySettings { .. })
-                if matches!(&module.command, Cmd::Battery(_)) && battery_details().is_err() =>
+                if matches!(&module.command.deref(), Cmd::Battery(_))
+                    && battery_details().is_err() =>
             {
                 warn!("Battery not found, deactivating module");
                 return None;
@@ -71,12 +73,12 @@ impl ModuleData {
                 interval,
                 formatting,
                 ..
-            }) => (listeners.new_time_listener(*interval), formatting.as_str()),
+            }) => (listeners.new_time_listener(*interval), formatting.clone()),
             Cmd::Backlight(settings) => {
                 if let Ok(path) = get_backlight_path().map(|path| path.join("brightness")) {
                     (
                         listeners.new_file_listener(&path),
-                        settings.formatting.as_str(),
+                        settings.formatting.clone(),
                     )
                 } else {
                     warn!("Backlight not found, deactivating module");
@@ -85,7 +87,7 @@ impl ModuleData {
             }
             Cmd::Audio(settings) => (
                 listeners.new_volume_change_listener(),
-                settings.formatting.as_str(),
+                settings.formatting.clone(),
             ),
             Cmd::Custom(settings) => {
                 let trigger = match &settings.event {
@@ -94,14 +96,14 @@ impl ModuleData {
                     Trigger::FileChange(path) => listeners.new_file_listener(path),
                     Trigger::VolumeChanged => listeners.new_volume_change_listener(),
                 };
-                (trigger, settings.formatting.as_str())
+                (trigger, settings.formatting.clone())
             }
         };
 
         Some(ModuleData {
             output: "".into(),
             command: module.command.clone(),
-            format: format.into(),
+            format,
             receiver,
             cache: DynamicImage::new(0, 0, ColorType::L8),
             position,
@@ -109,10 +111,11 @@ impl ModuleData {
     }
 
     pub fn render(&mut self, config_changed: bool, config: &HotConfig) {
-        let output = get_command_output(&self.command).unwrap_or(config.config.unkown.clone());
+        let output =
+            get_command_output(&self.command).unwrap_or_else(|_| config.config.unkown.clone());
         if output != self.output || config_changed {
             let format = self.format.replace("%s", &output);
-            let format = match &self.command {
+            let format = match &self.command.deref() {
                 Cmd::Battery(BatterySettings { icons, .. })
                 | Cmd::Backlight(BacklightSettings { icons, .. })
                 | Cmd::Audio(AudioSettings { icons, .. })
@@ -129,7 +132,7 @@ impl ModuleData {
                 _ => format.replace("%c", ""),
             };
 
-            let name = match &self.command {
+            let name = match &self.command.deref() {
                 Cmd::PersistantWorkspaces(_) => "persistant_workspaces",
                 Cmd::Workspaces(_) => "workspaces",
                 Cmd::Memory(_) => "memory",
@@ -141,7 +144,7 @@ impl ModuleData {
                 Cmd::Custom(custom) => &custom.name,
             };
 
-            self.cache = match &self.command {
+            self.cache = match &self.command.deref() {
                 Cmd::PersistantWorkspaces(_) => {
                     self.output = output;
                     persistant_workspaces::render(&config.css, &self.output)
@@ -159,10 +162,10 @@ fn generic_render(css: &[Style], name: &str, format: &str) -> DynamicImage {
     let img = get_style(css, name, format).unwrap_or_else(|_| {
         let mut css = CSS
             .iter()
-            .find(|a| a.selector == name.into())
+            .find(|a| a.selector == name)
             .expect(MESSAGE)
             .to_owned();
-        css.content = Some(format.into());
+        css.content.replace(format.into());
         css_image::render(css).expect(MESSAGE)
     });
 
@@ -176,10 +179,10 @@ fn generic_render(css: &[Style], name: &str, format: &str) -> DynamicImage {
             warn!("Failed to parse {name} module css, using default style");
             let mut css = CSS
                 .iter()
-                .find(|a| a.selector == name.into())
+                .find(|a| a.selector == name)
                 .expect(MESSAGE)
                 .to_owned();
-            css.content = Some(format.into());
+            css.content.replace(format.into());
             let css = css_image::render(css).expect(MESSAGE);
             image::load_from_memory(css.get(name).expect(MESSAGE)).unwrap()
         }
