@@ -34,6 +34,8 @@ pub struct WorkspaceListenerData {
     listener: WorkspaceListener,
 }
 
+unsafe impl Send for WorkspaceListenerData {}
+
 impl WorkspaceListenerData {
     pub fn new() -> Result<Self, Box<dyn crate::Error>> {
         let tx = broadcast::Sender::new(1);
@@ -134,7 +136,7 @@ impl Listeners {
     pub fn start_all(&mut self) {
         let time_listener = self.time_listener.take();
         let file_listener = self.file_listener.take();
-        let workspace_listener = self.workspace_listener.take();
+        let mut workspace_listener = self.workspace_listener.take();
         let volume_listener = self.volume_listener.take();
 
         // TLDR: thread sorts listeners by interval, waits for the shortest interval sends the message
@@ -183,13 +185,14 @@ impl Listeners {
         });
 
         thread::spawn(move || {
-            if let Some(mut workspace_listener) = workspace_listener {
+            let workspace_listener = workspace_listener.take();
+            if let Some(workspace_listener) = workspace_listener {
                 if workspace_listener.tx.receiver_count() == 0 {
                     return;
                 }
 
-                match &mut workspace_listener.listener {
-                    WorkspaceListener::Hyprland(listener) => {
+                match workspace_listener.listener {
+                    WorkspaceListener::Hyprland(mut listener) => {
                         let _ = listener.start_listener();
                     }
                     WorkspaceListener::Sway(_) => {}

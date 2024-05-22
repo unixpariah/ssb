@@ -8,19 +8,18 @@ anyhow = "1.0.82"
 cairo-rs = { version = "0.19.2", default-features = false, features = ["png"] }
 css-image = { path = "./css-image" }
 dirs = "5.0.1"
-hyprland = { version = "0.3.x", default-features = false, features = ["tokio", "listener"] }
+hyprland = { version = "0.4.0-alpha.2", default-features = false, features = ["tokio", "listener"] }
 image = { version = "0.25.0", default-features = false, features = ["png"] }
 inotify = "0.10.2"
 lazy_static = "1.4.0"
 libpulse-binding = "2.28.1"
 log = "0.4.21"
-neli = { version = "0.6.4", features = ["tokio", "netfilter", "async"] }
 rayon = "1.9.0"
 serde = { version = "1.0.197", features = ["derive", "rc"] }
 simplelog = "0.12.2"
 smithay-client-toolkit = { version = "0.18.1", default-features = false, features = ["calloop"] }
 swayipc = "3.0.2"
 sysinfo = { version = "0.30.7", default-features = false }
-tokio = { version = "1.36.0", features = ["sync"] }
+tokio = { version = "1.36.0", features = ["full"] }
 toml = "0.8.12"
 wayland-client = "0.31.2"
