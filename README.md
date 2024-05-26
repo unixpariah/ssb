@@ -48,8 +48,8 @@ Include this in your configuration.nix
       waystatus =
         import (pkgs.fetchgit {
         url = "https://github.com/unixpariah/waystatus.git";
-        rev = "e9e558d3d17d4e95b934ad9a1a26a686370cc6de";
-        sha256 = "0r77vi12a1wng17hd76v6s867kv38g8rijqqq7yrb5pmb37ncszy";
+        rev = "6115cb8f436fda7d8a24d0ea55f1e4823c1d851d";
+        sha256 = "17nk4ckrm7748vqqqd29jn27vpjgl3j5hcz9p7mlcrl23hkq9vfy";
         fetchSubmodules = true;
     }) {pkgs = pkgs;};
     in
