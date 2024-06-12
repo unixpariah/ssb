@@ -1,20 +1,22 @@
-{pkgs}: let
-  manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
+{
+  lib,
+  rustPlatform,
+}: let
+  cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
 in
-  pkgs.rustPlatform.buildRustPackage {
-    pname = manifest.name;
-    version = manifest.version;
+  rustPlatform.buildRustPackage {
+    pname = "waystatus";
+    version = "${cargoToml.package.version}";
     cargoLock.lockFile = ./Cargo.lock;
-    src = pkgs.lib.cleanSource ./.;
-
-    buildInputs = with pkgs; [
-      cairo
-      libpulseaudio
-    ];
-
-    nativeBuildInputs = with pkgs; [
-      pkg-config
-    ];
-
-    NIX_LDFLAGS = "-L${pkgs.libpulseaudio.out}/lib";
+    src = lib.fileset.toSource {
+      root = ./.;
+      fileset =
+        lib.fileset.intersection
+        (lib.fileset.fromSource (lib.sources.cleanSource ./.))
+        (lib.fileset.unions [
+          ./src
+          ./Cargo.toml
+          ./Cargo.lock
+        ]);
+    };
   }

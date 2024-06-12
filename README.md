@@ -31,52 +31,24 @@ Waystatus is a simple status bar for wlroots based compositors.
 - [ ] Date and time
 - [ ] Bluetooth
 
-## Build time dependencies
+## Building
+
+1. Install dependencies:
 
 - rust
 - cairo
 - libpulseaudio
 
-## Installation
-
-### The nix way
-
-Include this in your configuration.nix
-
-```nix
-    (let
-      waystatus =
-        import (pkgs.fetchgit {
-        url = "https://github.com/unixpariah/waystatus.git";
-        rev = "6115cb8f436fda7d8a24d0ea55f1e4823c1d851d";
-        sha256 = "17nk4ckrm7748vqqqd29jn27vpjgl3j5hcz9p7mlcrl23hkq9vfy";
-        fetchSubmodules = true;
-    }) {pkgs = pkgs;};
-    in
-      waystatus
-    )
-```
-
-### The manual way
-
-1. Clone the repository and cd into it
+2. Clone the repository and cd into it
 
 ```sh
 git clone https://github.com/unixpariah/waystatus.git && cd waystatus
 ```
 
-2. Install necessary dependencies or use nix flake
-
 3. Build the project
 
 ```sh
 cargo build --release
-```
-
-4. Run the binary
-
-```sh
-./target/release/waystatus
 ```
 
 ## Configuration

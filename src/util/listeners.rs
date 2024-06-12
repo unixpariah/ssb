@@ -176,6 +176,7 @@ impl Listeners {
                             // We're always listening to parent changes so unwrap is safe (I hope)
                             let name = event.name.unwrap().to_string_lossy();
                             if let Some(tx) = file_listener.store.get(&*name) {
+                                println!("{:?}", event);
                                 _ = tx.send(());
                             }
                         });
@@ -250,11 +251,10 @@ impl Listeners {
         file_listener
             .store
             .insert(path.file_name().unwrap().to_string_lossy().into(), tx);
-        if let Err(e) = file_listener
-            .inotify
-            .watches()
-            .add(path.parent().unwrap(), WatchMask::MODIFY)
-        {
+        if let Err(e) = file_listener.inotify.watches().add(
+            path.parent().unwrap(),
+            WatchMask::MODIFY | WatchMask::MOVED_TO,
+        ) {
             warn!(
                 "Failed to create file change listener for path: {}\n {}",
                 path.display(),
