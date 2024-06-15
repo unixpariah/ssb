@@ -22,23 +22,16 @@
 
     devShells = forAllSystems (pkgs: {
       default = pkgs.mkShell {
-        strictDeps = true;
         nativeBuildInputs = with pkgs; [
           pkg-config
           cargo
-          glib
           cairo
           libpulseaudio
           rustc
-          rust-analyzer-unwrapped
+          rust-analyzer
           rustfmt
           clippy
         ];
-
-        shellHook = ''
-          export PKG_CONFIG_PATH=${pkgs.glib.dev}/lib/pkgconfig:${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.libpulseaudio.dev}/lib/pkgconfig
-          export NIX_LDFLAGS="-L${pkgs.libpulseaudio.out}/lib"
-        '';
       };
     });
   };

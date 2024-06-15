@@ -176,7 +176,6 @@ impl Listeners {
                             // We're always listening to parent changes so unwrap is safe (I hope)
                             let name = event.name.unwrap().to_string_lossy();
                             if let Some(tx) = file_listener.store.get(&*name) {
-                                println!("{:?}", event);
                                 _ = tx.send(());
                             }
                         });
