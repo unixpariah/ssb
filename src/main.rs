@@ -141,7 +141,6 @@ impl StatusBar {
         }
     }
 
-    #[inline]
     fn reload_config(&mut self) {
         let mut config_changed = false;
         if self.config.css_listener.try_recv().is_ok() {
@@ -170,8 +169,10 @@ impl StatusBar {
                     .layer_surface
                     .set_layer(match &*self.config.config.layer {
                         "overlay" => Layer::Overlay,
+                        "top" => Layer::Top,
+                        "bottom" => Layer::Bottom,
                         "background" => Layer::Background,
-                        _ => Layer::Overlay,
+                        _ => Layer::Top,
                     });
                 surface
                     .layer_surface
